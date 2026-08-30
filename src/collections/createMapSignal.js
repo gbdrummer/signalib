@@ -4,6 +4,8 @@ import createDerivedSignal from '../core/createDerivedSignal.js'
 import createIndexSignal from './createIndexSignal.js'
 import { createStableSnapshotSignal } from './utilities.js'
 import { assertNotInDerivedCompute, composeSignal } from '../core/utilities.js'
+import { batch } from '../core/queue.js'
+import { attachPatchApplicator, getPatchOperation, unsupportedPatchOperation } from './applyPatches.js'
 
 function createMapView (mapData) {
   const view = {
@@ -372,7 +374,55 @@ export default function createMapSignal (initialValue) {
     })
   }
 
-  return composeSignal({
+  function applyPatchBundle (patches) {
+    for (let i = 0; i < patches.length; i++) {
+      const patch = patches[i]
+      const op = getPatchOperation(patch, i, 'Map')
+
+      if (op === 'replace') {
+        if (!Array.isArray(patch.entries)) throw new TypeError(`Map replace patch at index ${i} expects entries to be an array`)
+        try {
+          new Map(patch.entries)
+        } catch {
+          throw new TypeError(`Map replace patch at index ${i} expects entries to contain [key, value] pairs`)
+        }
+        continue
+      }
+
+      if (op === 'set' || op === 'delete' || op === 'clear') continue
+
+      unsupportedPatchOperation('Map', patch, i)
+    }
+
+    return batch(() => {
+      let didChange = false
+      let i = 0
+
+      while (i < patches.length) {
+        if (patches[i].op === 'replace') {
+          didChange = setValue(patches[i].entries) || didChange
+          i++
+          continue
+        }
+
+        const start = i
+        while (i < patches.length && patches[i].op !== 'replace') i++
+
+        didChange = !!mutate(map => {
+          for (let j = start; j < i; j++) {
+            const patch = patches[j]
+            if (patch.op === 'set') map.set(patch.key, patch.value)
+            if (patch.op === 'delete') map.delete(patch.key)
+            if (patch.op === 'clear') map.clear()
+          }
+        }) || didChange
+      }
+
+      return didChange
+    })
+  }
+
+  return composeSignal(attachPatchApplicator({
     getValue,
     setValue,
     mutate,
@@ -384,5 +434,5 @@ export default function createMapSignal (initialValue) {
     get: key => mapData.get(key),
 
     get size () { return mapData.size }
-  }, subscriptions)
+  }, applyPatchBundle), subscriptions)
 }

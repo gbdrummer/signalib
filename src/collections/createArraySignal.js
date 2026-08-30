@@ -3,6 +3,8 @@ import { createUpdateChange } from '../core/change.js'
 import createDerivedSignal from '../core/createDerivedSignal.js'
 import createIndexSignal from './createIndexSignal.js'
 import { assertNotInDerivedCompute, composeSignal } from '../core/utilities.js'
+import { batch } from '../core/queue.js'
+import { attachPatchApplicator, getPatchOperation, unsupportedPatchOperation } from './applyPatches.js'
 
 function freezeArrayValue (value, context) {
   if (!Array.isArray(value)) throw new TypeError(`${context} expects value to be an array`)
@@ -180,11 +182,69 @@ export default function createArraySignal (initialValue) {
     return bundle
   }
 
-  return composeSignal({
+  function applyPatchBundle (patches) {
+    let validationValue = value.slice()
+
+    for (let i = 0; i < patches.length; i++) {
+      const patch = patches[i]
+      const op = getPatchOperation(patch, i, 'Array')
+
+      if (op === 'replace') {
+        if (!Array.isArray(patch.value)) throw new TypeError(`Array replace patch at index ${i} expects value to be an array`)
+        validationValue = patch.value.slice()
+        continue
+      }
+
+      if (op === 'set') {
+        if (!Number.isInteger(patch.index)) throw new TypeError(`Array set patch at index ${i} expects index to be an integer`)
+        if (patch.index < 0 || patch.index >= validationValue.length) throw new RangeError(`Array set patch at index ${i} is out of range`)
+        validationValue[patch.index] = patch.value
+        continue
+      }
+
+      if (op === 'splice') {
+        if (typeof patch.index !== 'number' || typeof patch.deleteCount !== 'number' || !Array.isArray(patch.items)) {
+          throw new TypeError(`Array splice patch at index ${i} expects numeric index/deleteCount and an items array`)
+        }
+        validationValue.splice(patch.index, patch.deleteCount, ...patch.items)
+        continue
+      }
+
+      unsupportedPatchOperation('Array', patch, i)
+    }
+
+    return batch(() => {
+      let didChange = false
+      let i = 0
+
+      while (i < patches.length) {
+        if (patches[i].op === 'replace') {
+          didChange = setValue(patches[i].value) || didChange
+          i++
+          continue
+        }
+
+        const start = i
+        while (i < patches.length && patches[i].op !== 'replace') i++
+
+        didChange = !!mutate(array => {
+          for (let j = start; j < i; j++) {
+            const patch = patches[j]
+            if (patch.op === 'set') array.set(patch.index, patch.value)
+            if (patch.op === 'splice') array.splice(patch.index, patch.deleteCount, ...patch.items)
+          }
+        }) || didChange
+      }
+
+      return didChange
+    })
+  }
+
+  return composeSignal(attachPatchApplicator({
     getValue,
     setValue,
     mutate,
 
     get index () { return getIndex() }
-  }, subscriptions)
+  }, applyPatchBundle), subscriptions)
 }

@@ -1,17 +1,59 @@
 {
-  "name": "tracer",
-  "version": "0.0.1-alpha.1",
-  "description": "A deterministic signals library exploring predictable reactive state and dependency flows.",
+  "name": "@gbdrummer/tracer",
+  "version": "0.0.1-alpha.2",
+  "description": "Predictable JavaScript signals with explicit dependencies, fine-grained reactive collections, and first-class mutation patches.",
   "license": "MIT",
   "author": "Graham Butler",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gbdrummer/tracer.git"
+  },
+  "homepage": "https://github.com/gbdrummer/tracer#readme",
+  "bugs": {
+    "url": "https://github.com/gbdrummer/tracer/issues"
+  },
+  "keywords": [
+    "signals",
+    "reactivity",
+    "reactive-state",
+    "state-management",
+    "observable",
+    "patches",
+    "undo",
+    "redo",
+    "history",
+    "javascript"
+  ],
   "type": "module",
   "main": "./src/index.js",
+  "types": "./index.d.ts",
   "exports": {
-    ".": "./src/index.js"
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "index.d.ts",
+    "src/index.js",
+    "src/createHistory.js",
+    "src/core",
+    "src/collections",
+    "src/history/index.js",
+    "src/history/index.d.ts",
+    "src/history/README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "smoke": "node ./test/smoke-tests.node.js",
     "stress": "TRACER_STRESS=1 node ./test/smoke-tests.node.js",
-    "test": "node ./test/smoke-tests.node.js"
+    "test": "node ./test/smoke-tests.node.js",
+    "test:types": "tsc -p ./test/tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   }
 }

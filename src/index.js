@@ -10,6 +10,8 @@ export { batch } from './core/queue.js'
 export { default as TracerSignal } from './core/TracerSignal.js'
 export { SIGNAL_BRAND } from './core/constants.js'
 export { isSignal } from './core/utilities.js'
+export { default as applyPatches } from './collections/applyPatches.js'
+export { default as createHistory } from './createHistory.js'
 
 export function signal (initialValue) {
   if (arguments.length > 1) throw new TypeError('signal() accepts only one argument')

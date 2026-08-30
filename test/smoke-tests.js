@@ -1,4 +1,4 @@
-import { signal, overridable, batch } from '../src/index.js'
+import { signal, overridable, batch, applyPatches, createHistory as createTracerHistory } from '../src/index.js'
 import createHistory from '../src/history/index.js'
 import TracerSignal from '../src/core/TracerSignal.js'
 import { SIGNAL_BRAND } from '../src/core/constants.js'
@@ -307,7 +307,7 @@ export function runSmokeTests () {
     unsubscribe()
   })
 
-  test('overridable: hot follows base, override stops following, clear resumes', () => {
+  test('overridable: hot follows base, override stops following, clearOverride resumes', () => {
     const base = createSpySignal(1)
     const wrapped = overridable(base)
 
@@ -332,10 +332,12 @@ export function runSmokeTests () {
     assertEqual(calls.length, 3, 'wrapped should notify subscribers when overridden value is set')
     assertEqual(wrapped.getValue(), 10, 'base changes should not affect wrapped while overridden')
 
-    assertEqual(wrapped.clear(), true, 'clear should return true when it changes exposed value')
-    assertEqual(wrapped.isOverridden, false, 'wrapped should follow after clear')
+    assertEqual(wrapped.clearOverride(), true, 'clearOverride should return true when it changes exposed value')
+    assertEqual(wrapped.isOverridden, false, 'wrapped should follow after clearOverride')
     assertEqual(wrapped.getValue(), 3, 'wrapped should snap back to current base value')
-    assertEqual(base.activeSubscriberCount, 1, 'wrapped should resubscribe upstream after clear while hot')
+    assertEqual(base.activeSubscriberCount, 1, 'wrapped should resubscribe upstream after clearOverride while hot')
+    assertEqual(wrapped.clearOverride(), false, 'clearOverride should be a no-op when no override is active')
+    assertEqual(typeof wrapped.clear, 'undefined', 'overridable should not expose the ambiguous clear alias')
 
     unsubscribe()
     assertEqual(base.activeSubscriberCount, 0, 'wrapped should tear down upstream subscriptions on last unsubscribe')
@@ -353,9 +355,9 @@ export function runSmokeTests () {
     assertEqual(wrapped.getValue(), 2, 'cold read returns overridden value')
     assertEqual(base.activeSubscriberCount, 0, 'override should not subscribe upstream')
 
-    wrapped.clear()
+    wrapped.clearOverride()
     base.setValue(3)
-    assertEqual(wrapped.getValue(), 3, 'cold read after clear reflects base')
+    assertEqual(wrapped.getValue(), 3, 'cold read after clearOverride reflects base')
     assertEqual(base.activeSubscriberCount, 0, 'still should not subscribe upstream while cold')
   })
 
@@ -935,6 +937,228 @@ export function runSmokeTests () {
     assertEqual(patchCalls.length, 1, 'should notify once per batch')
     assertEqual(patchCalls[0].patches.length, 2, 'patches should concatenate')
     assertEqual(patchCalls[0].inversePatches.length, 2, 'inverse patches should concatenate')
+  })
+
+  test('applyPatches: Map forward and inverse patches round-trip with fine-grained notifications', () => {
+    const m = signal.map([['a', 1], ['remove', 9]])
+    const a = m.key('a')
+    const added = m.key('added')
+    const removed = m.key('remove')
+
+    const mapCalls = []
+    const keyCalls = { a: [], added: [], removed: [] }
+    const keysCalls = []
+
+    m.subscribe(change => change.kind === 'update' && mapCalls.push(change))
+    a.subscribe(change => change.kind === 'update' && keyCalls.a.push(change.nextValue))
+    added.subscribe(change => change.kind === 'update' && keyCalls.added.push(change.nextValue))
+    removed.subscribe(change => change.kind === 'update' && keyCalls.removed.push(change.nextValue))
+    m.index.keys.subscribe(change => change.kind === 'update' && keysCalls.push(change.nextValue))
+
+    const bundle = m.mutate(map => {
+      map.set('a', 2)
+      map.set('added', 3)
+      map.delete('remove')
+    })
+
+    mapCalls.length = 0
+    keyCalls.a.length = 0
+    keyCalls.added.length = 0
+    keyCalls.removed.length = 0
+    keysCalls.length = 0
+
+    assertEqual(applyPatches(m, bundle.inversePatches), true, 'inverse patches should report a change')
+    assertEqual(m.get('a'), 1, 'inverse set should restore an existing Map value')
+    assertEqual(m.has('added'), false, 'inverse delete should remove a newly added Map key')
+    assertEqual(m.get('remove'), 9, 'inverse of Map delete should restore its value')
+    assertEqual(mapCalls.length, 1, 'inverse bundle should notify the Map once')
+    assertEqual(mapCalls[0].meta.patches.length, 3, 'inverse bundle notification should compose applied operations')
+    assertEqual(keyCalls.a.length, 1, 'existing-key signal should notify once for inverse application')
+    assertEqual(keyCalls.added.length, 1, 'added-key signal should notify once for inverse application')
+    assertEqual(keyCalls.removed.length, 1, 'deleted-key signal should notify once for inverse application')
+    assertEqual(keysCalls.length, 1, 'Map structural keys should notify once for inverse application')
+
+    mapCalls.length = 0
+    keyCalls.a.length = 0
+    keyCalls.added.length = 0
+    keyCalls.removed.length = 0
+    keysCalls.length = 0
+
+    assertEqual(applyPatches(m, bundle.patches), true, 'forward patches should report a change')
+    assertEqual(m.get('a'), 2, 'forward set should replace an existing Map value')
+    assertEqual(m.get('added'), 3, 'forward set should add a Map key')
+    assertEqual(m.has('remove'), false, 'forward delete should remove a Map key')
+    assertEqual(mapCalls.length, 1, 'forward bundle should notify the Map once')
+    assertEqual(keyCalls.a.length, 1, 'existing-key signal should notify once for forward application')
+    assertEqual(keyCalls.added.length, 1, 'added-key signal should notify once for forward application')
+    assertEqual(keyCalls.removed.length, 1, 'deleted-key signal should notify once for forward application')
+    assertEqual(keysCalls.length, 1, 'Map structural keys should notify once for forward application')
+  })
+
+  test('applyPatches: Array set, splice, replace, and inverse patches use normal notifications', () => {
+    const arr = signal.array([1, 2, 3])
+    const valueCalls = []
+    const lengthCalls = []
+
+    arr.subscribe(change => change.kind === 'update' && valueCalls.push(change))
+    arr.index.length.subscribe(change => change.kind === 'update' && lengthCalls.push(change.nextValue))
+
+    const bundle = arr.mutate(array => {
+      array.set(0, 10)
+      array.splice(1, 2, 20, 30, 40)
+    })
+
+    valueCalls.length = 0
+    lengthCalls.length = 0
+
+    applyPatches(arr, bundle.inversePatches)
+    assertEqual(arr.getValue().join(','), '1,2,3', 'Array inverse patches should restore the previous value')
+    assertEqual(valueCalls.length, 1, 'Array inverse bundle should notify once')
+    assertEqual(lengthCalls.length, 1, 'Array length signal should notify once')
+
+    valueCalls.length = 0
+    lengthCalls.length = 0
+
+    applyPatches(arr, bundle.patches)
+    assertEqual(arr.getValue().join(','), '10,20,30,40', 'Array forward patches should restore the new value')
+    assertEqual(valueCalls.length, 1, 'Array forward bundle should notify once')
+    assertEqual(lengthCalls.length, 1, 'Array length signal should notify once for forward application')
+
+    applyPatches(arr, [{ op: 'replace', value: ['replacement'] }])
+    assertEqual(arr.getValue().join(','), 'replacement', 'Array replace patch should be supported')
+  })
+
+  test('applyPatches: Object patches round-trip and update structural signals', () => {
+    const obj = signal.object({ a: 1, remove: 9 })
+    const valueCalls = []
+    const keysCalls = []
+
+    obj.subscribe(change => change.kind === 'update' && valueCalls.push(change))
+    obj.index.keys.subscribe(change => change.kind === 'update' && keysCalls.push(change.nextValue))
+
+    const bundle = obj.mutate(object => {
+      object.set('a', 2)
+      object.set('added', 3)
+      object.delete('remove')
+    })
+
+    valueCalls.length = 0
+    keysCalls.length = 0
+
+    applyPatches(obj, bundle.inversePatches)
+    assertEqual(obj.getValue().a, 1, 'Object inverse set should restore an existing value')
+    assertEqual(Object.prototype.hasOwnProperty.call(obj.getValue(), 'added'), false, 'Object inverse delete should remove an added key')
+    assertEqual(obj.getValue().remove, 9, 'Object inverse should restore a deleted key')
+    assertEqual(valueCalls.length, 1, 'Object inverse bundle should notify once')
+    assertEqual(keysCalls.length, 1, 'Object structural keys should notify once')
+
+    applyPatches(obj, bundle.patches)
+    assertEqual(obj.getValue().a, 2, 'Object forward set should restore the new value')
+    assertEqual(obj.getValue().added, 3, 'Object forward set should restore an added key')
+    assertEqual(Object.prototype.hasOwnProperty.call(obj.getValue(), 'remove'), false, 'Object forward delete should remove its key')
+
+    applyPatches(obj, [{ op: 'replace', value: { final: true } }])
+    assertEqual(obj.getValue().final, true, 'Object replace patch should be supported')
+    assertEqual(Object.keys(obj.getValue()).length, 1, 'Object replace patch should replace all keys')
+  })
+
+  test('applyPatches: Set patches round-trip with stable membership signals', () => {
+    const s = signal.set(['keep', 'remove'])
+    const added = s.value('added')
+    const removed = s.value('remove')
+    const setCalls = []
+    const addedCalls = []
+    const removedCalls = []
+
+    s.subscribe(change => change.kind === 'update' && setCalls.push(change))
+    added.subscribe(change => change.kind === 'update' && addedCalls.push(change.nextValue))
+    removed.subscribe(change => change.kind === 'update' && removedCalls.push(change.nextValue))
+
+    const bundle = s.mutate(set => {
+      set.add('added')
+      set.delete('remove')
+    })
+
+    setCalls.length = 0
+    addedCalls.length = 0
+    removedCalls.length = 0
+
+    applyPatches(s, bundle.inversePatches)
+    assertEqual(s.has('added'), false, 'Set inverse delete should remove an added value')
+    assertEqual(s.has('remove'), true, 'Set inverse add should restore a deleted value')
+    assertEqual(setCalls.length, 1, 'Set inverse bundle should notify once')
+    assertEqual(addedCalls.length, 1, 'added-value signal should notify once for inverse application')
+    assertEqual(removedCalls.length, 1, 'removed-value signal should notify once for inverse application')
+
+    setCalls.length = 0
+    addedCalls.length = 0
+    removedCalls.length = 0
+
+    applyPatches(s, bundle.patches)
+    assertEqual(s.has('added'), true, 'Set forward add should restore the new value')
+    assertEqual(s.has('remove'), false, 'Set forward delete should remove its value')
+    assertEqual(setCalls.length, 1, 'Set forward bundle should notify once')
+    assertEqual(addedCalls.length, 1, 'added-value signal should notify once for forward application')
+    assertEqual(removedCalls.length, 1, 'removed-value signal should notify once for forward application')
+
+    applyPatches(s, [{ op: 'clear' }, { op: 'replace', values: ['final'] }])
+    assertEqual(s.size, 1, 'Set clear and replace patches should be supported')
+    assertEqual(s.has('final'), true, 'Set replace patch should install replacement values')
+  })
+
+  test('applyPatches: Map clear and replace patches are supported', () => {
+    const m = signal.map([['a', 1]])
+
+    applyPatches(m, [{ op: 'clear' }])
+    assertEqual(m.size, 0, 'Map clear patch should remove all entries')
+
+    applyPatches(m, [{ op: 'replace', entries: [['b', 2], ['c', 3]] }])
+    assertEqual(m.size, 2, 'Map replace patch should install replacement entries')
+    assertEqual(m.get('b'), 2, 'Map replace patch should preserve entry values')
+  })
+
+  test('applyPatches: nested batching composes notifications', () => {
+    const m = signal.map()
+    const calls = []
+
+    m.subscribe(change => change.kind === 'update' && calls.push(change))
+
+    batch(() => {
+      applyPatches(m, [{ op: 'set', key: 'a', value: 1 }])
+      applyPatches(m, [{ op: 'set', key: 'b', value: 2 }])
+    })
+
+    assertEqual(calls.length, 1, 'surrounding batch should coalesce multiple patch applications')
+    assertEqual(calls[0].meta.patches.length, 2, 'surrounding batch should compose patch metadata')
+  })
+
+  test('applyPatches: stable key signals observe the final bundle state', () => {
+    const m = signal.map([['a', 1]])
+    const calls = []
+
+    m.key('a').subscribe(change => change.kind === 'update' && calls.push(change))
+
+    applyPatches(m, [
+      { op: 'set', key: 'a', value: 2 },
+      { op: 'set', key: 'a', value: 1 }
+    ])
+
+    assertEqual(calls.length, 0, 'key signal should not notify when a patch bundle has no net effect on its entry')
+  })
+
+  test('applyPatches: validates the complete bundle before changing state', () => {
+    const m = signal.map([['a', 1]])
+
+    assertThrows(
+      () => applyPatches(m, [{ op: 'set', key: 'b', value: 2 }, { op: 'unknown' }]),
+      /Map patch operation "unknown" at index 1 is not supported/,
+      'unsupported Map operation should fail clearly'
+    )
+
+    assertEqual(m.has('b'), false, 'validation failure should not partially apply earlier patches')
+    assertThrows(() => applyPatches(m, null), /expects patches to be an array/, 'patches should be an array')
+    assertThrows(() => applyPatches(signal(1), []), /writable Tracer collection signal/, 'target should be a writable collection')
+    assertEqual(applyPatches(m, []), false, 'empty patch bundles should be a no-op')
   })
 
   test('array.index.length notifies only when length changes', () => {
@@ -1654,7 +1878,80 @@ export function runSmokeTests () {
     assertEqual(okCalls[0], 1, 'other subscriber should receive update value')
   })
 
-  test('history: transaction groups bundles into one undo step', () => {
+  test('history: Tracer collection history handles several sequential mutations', () => {
+    const users = signal.map()
+    const history = createTracerHistory({ target: users, limit: 50 })
+
+    function mutate (fn) {
+      const change = users.mutate(fn)
+      if (change) history.record(change)
+    }
+
+    mutate(map => map.set('ada', { name: 'Ada' }))
+    mutate(map => map.set('grace', { name: 'Grace' }))
+    mutate(map => map.set('ada', { name: 'Ada Lovelace' }))
+
+    assertEqual(users.size, 2, 'all sequential edits should be applied')
+    assertEqual(users.get('ada').name, 'Ada Lovelace', 'latest sequential edit should win')
+
+    assertEqual(history.undo(2), true, 'undo(count) should undo several mutations')
+    assertEqual(users.get('ada').name, 'Ada', 'undo should restore the earlier entry value')
+    assertEqual(users.has('grace'), false, 'undo should remove the preceding added entry')
+
+    assertEqual(history.redo(2), true, 'redo(count) should redo several mutations')
+    assertEqual(users.get('ada').name, 'Ada Lovelace', 'redo should restore the latest entry value')
+    assertEqual(users.has('grace'), true, 'redo should restore the added entry')
+  })
+
+  test('history: Tracer transaction groups collection mutations into one step', () => {
+    const state = signal.object({ first: 0, second: 0 })
+    const history = createTracerHistory({ target: state })
+
+    history.transaction(() => {
+      history.record(state.mutate(object => object.set('first', 1)))
+      history.record(state.mutate(object => object.set('second', 2)))
+    })
+
+    assertEqual(history.getStacks().past.length, 1, 'transaction should create one undo step')
+    assertEqual(history.undo(), true, 'grouped transaction should undo')
+    assertEqual(state.getValue().first, 0, 'transaction undo should restore the first value')
+    assertEqual(state.getValue().second, 0, 'transaction undo should restore the second value')
+    assertEqual(history.redo(), true, 'grouped transaction should redo')
+    assertEqual(state.getValue().first, 1, 'transaction redo should restore the first edit')
+    assertEqual(state.getValue().second, 2, 'transaction redo should restore the second edit')
+  })
+
+  test('history: Tracer redo stack is invalidated by a new edit', () => {
+    const items = signal.array([])
+    const history = createTracerHistory({ target: items })
+
+    history.record(items.mutate(array => array.push('first')))
+    history.record(items.mutate(array => array.push('second')))
+
+    history.undo()
+    assertEqual(history.canRedo, true, 'undo should create a redo step')
+
+    history.record(items.mutate(array => array.push('replacement')))
+    assertEqual(history.canRedo, false, 'recording a new edit should invalidate redo')
+    assertEqual(history.redo(), false, 'invalidated redo should not apply anything')
+    assertEqual(items.getValue().join(','), 'first,replacement', 'new edit should remain after redo invalidation')
+  })
+
+  test('history: Tracer integration validates its collection target', () => {
+    assertThrows(
+      () => createTracerHistory({ target: signal(0) }),
+      /writable Tracer collection signal/,
+      'stored scalar target should be rejected'
+    )
+
+    assertThrows(
+      () => createTracerHistory({ target: signal.map(() => []) }),
+      /writable Tracer collection signal/,
+      'derived collection target should be rejected'
+    )
+  })
+
+  test('history: generic transaction groups bundles into one undo step', () => {
     const state = { count: 0 }
 
     const applyPatches = patches => {
@@ -1682,7 +1979,7 @@ export function runSmokeTests () {
     assertEqual(history.canUndo, true, 'history should have undo after transaction')
   })
 
-  test('history: undo/redo applies inverse/forward patches', () => {
+  test('history: generic undo/redo applies inverse/forward patches', () => {
     const state = { count: 0 }
 
     const applyPatches = patches => {
@@ -1710,7 +2007,7 @@ export function runSmokeTests () {
     assertEqual(state.count, 2, 'redo should reapply next value')
   })
 
-  test('history: subscribe can drive canUndo/canRedo signals', () => {
+  test('history: generic subscribe can drive canUndo/canRedo signals', () => {
     const state = { count: 0 }
 
     const applyPatches = patches => {

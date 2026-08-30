@@ -13,7 +13,7 @@ Generic patch-based history tracker.
 }
 ```
 
-You provide `applyPatches(patches)`. `tracer-history` handles:
+When used directly, you provide `applyPatches(patches)`. `tracer-history` handles:
 
 - recording bundles
 - grouping multiple bundles into a single undo step via `transaction(fn)`
@@ -21,6 +21,23 @@ You provide `applyPatches(patches)`. `tracer-history` handles:
 - state notifications (`canUndo` / `canRedo`)
 
 This package is ESM-only (`"type": "module"`).
+
+Tracer collection users normally do not need to provide a patch applicator. The integrated API exported by `@gbdrummer/tracer` accepts the collection as its target and uses Tracer's `applyPatches()` internally:
+
+```js
+import { createHistory, signal } from '@gbdrummer/tracer'
+
+const todos = signal.array([])
+const history = createHistory({ target: todos, limit: 100 })
+
+const change = todos.mutate(array => {
+  array.push({ id: 1, title: 'Write docs' })
+})
+
+history.record(change)
+history.undo()
+history.redo()
+```
 
 ## Installation / Import
 
@@ -170,26 +187,17 @@ Each step is shallow-copied, and `bundles` arrays are copied. (Bundle objects in
 
 ## Integration patterns
 
-### Integrating with `tracer`
+### Integrating with Tracer
 
-`tracer` collection mutations already produce `{ patches, inversePatches }` bundles.
+Tracer collection mutations already produce `{ patches, inversePatches }` bundles.
 
-Typical wiring:
+Use the integrated `createHistory({ target })` facade so application code never has to interpret collection patch operations:
 
 ```js
-import createHistory from 'tracer-history'
-import { signal } from 'tracer'
+import { createHistory, signal } from '@gbdrummer/tracer'
 
 const todos = signal.array([])
-
-const history = createHistory({
-  applyPatches: patches => {
-    // You decide how to interpret patches.
-    // A common approach is to translate patches into a `mutate()` call
-    // or to apply them using your own patch interpreter.
-  },
-  limit: 100
-})
+const history = createHistory({ target: todos, limit: 100 })
 
 function mutateWithHistory (fn) {
   const bundle = todos.mutate(fn)
@@ -202,5 +210,4 @@ history.undo()
 history.redo()
 ```
 
-The key invariant is: **when you apply patches during undo/redo, do not record** (the library already enforces this by making `record()` a no-op during application).
-
+The key invariant is: **when history applies patches during undo/redo, do not record them as new edits**. The history engine enforces this by making `record()` a no-op during application.

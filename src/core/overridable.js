@@ -92,8 +92,8 @@ export default function overridable (base) {
     return true
   }
 
-  function clear () {
-    assertNotInDerivedCompute('clear')
+  function clearOverride () {
+    assertNotInDerivedCompute('clear override')
     if (!isOverridden) return false
 
     const previousValue = overrideValue
@@ -114,7 +114,7 @@ export default function overridable (base) {
   return composeSignal({
     getValue,
     setValue,
-    clear,
+    clearOverride,
 
     get isOverridden () {
       return isOverridden

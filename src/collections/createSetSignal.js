@@ -4,6 +4,8 @@ import createDerivedSignal from '../core/createDerivedSignal.js'
 import createIndexSignal from './createIndexSignal.js'
 import { createStableSnapshotSignal } from './utilities.js'
 import { assertNotInDerivedCompute, composeSignal } from '../core/utilities.js'
+import { batch } from '../core/queue.js'
+import { attachPatchApplicator, getPatchOperation, unsupportedPatchOperation } from './applyPatches.js'
 
 function createSetView (setData) {
   const view = {
@@ -323,7 +325,50 @@ export default function createSetSignal (initialValue) {
     })
   }
 
-  return composeSignal({
+  function applyPatchBundle (patches) {
+    for (let i = 0; i < patches.length; i++) {
+      const patch = patches[i]
+      const op = getPatchOperation(patch, i, 'Set')
+
+      if (op === 'replace') {
+        if (!Array.isArray(patch.values)) throw new TypeError(`Set replace patch at index ${i} expects values to be an array`)
+        continue
+      }
+
+      if (op === 'add' || op === 'delete' || op === 'clear') continue
+
+      unsupportedPatchOperation('Set', patch, i)
+    }
+
+    return batch(() => {
+      let didChange = false
+      let i = 0
+
+      while (i < patches.length) {
+        if (patches[i].op === 'replace') {
+          didChange = setValue(patches[i].values) || didChange
+          i++
+          continue
+        }
+
+        const start = i
+        while (i < patches.length && patches[i].op !== 'replace') i++
+
+        didChange = !!mutate(set => {
+          for (let j = start; j < i; j++) {
+            const patch = patches[j]
+            if (patch.op === 'add') set.add(patch.value)
+            if (patch.op === 'delete') set.delete(patch.value)
+            if (patch.op === 'clear') set.clear()
+          }
+        }) || didChange
+      }
+
+      return didChange
+    })
+  }
+
+  return composeSignal(attachPatchApplicator({
     getValue,
     setValue,
     mutate,
@@ -334,5 +379,5 @@ export default function createSetSignal (initialValue) {
     has: v => setData.has(v),
 
     get size () { return setData.size }
-  }, subscriptions)
+  }, applyPatchBundle), subscriptions)
 }
