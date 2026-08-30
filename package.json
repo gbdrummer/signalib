@@ -1,6 +1,6 @@
 {
   "name": "@gbdrummer/signalib",
-  "version": "0.0.1-alpha.5",
+  "version": "0.0.1",
   "description": "Predictable JavaScript signals with explicit dependencies, fine-grained reactive collections, and first-class mutation patches.",
   "license": "MIT",
   "author": "Graham Butler",
