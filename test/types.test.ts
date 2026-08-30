@@ -10,7 +10,7 @@ import {
   type MapPatch,
   type PatchBundle,
   type SignalMap
-} from 'signalib'
+} from '@gbdrummer/signalib'
 
 const count = signal(0)
 count.setValue(1)

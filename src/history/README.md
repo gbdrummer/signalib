@@ -1,6 +1,6 @@
 # Signalib generic history engine
 
-The `signalib/history` subpath exports the generic patch-based history engine used by Signalib's integrated collection history. It can manage any state model that represents edits as patch bundles:
+The `@gbdrummer/signalib/history` subpath exports the generic patch-based history engine used by Signalib's integrated collection history. It can manage any state model that represents edits as patch bundles:
 
 ```text
 {
@@ -13,7 +13,7 @@ The `signalib/history` subpath exports the generic patch-based history engine us
 For writable Signalib collections, prefer the integrated root export. It supplies patch application, validation, and batching automatically:
 
 ```js
-import { createHistory, signal } from 'signalib'
+import { createHistory, signal } from '@gbdrummer/signalib'
 
 const todos = signal.array([])
 const history = createHistory({ target: todos, limit: 100 })
@@ -30,7 +30,7 @@ history.redo()
 Use the generic subpath for custom patch formats or non-Signalib state:
 
 ```js
-import createHistory from 'signalib/history'
+import createHistory from '@gbdrummer/signalib/history'
 
 const state = { count: 0 }
 

@@ -23,7 +23,7 @@ Signalib brings the same clarity to collections. You can watch an entire Array, 
 Signalib is ESM-only. TypeScript declarations are included for editor support and type checking; the runtime implementation remains JavaScript.
 
 ```sh
-npm install signalib
+npm install @gbdrummer/signalib
 ```
 
 ```js
@@ -33,7 +33,7 @@ import {
   createHistory,
   overridable,
   signal
-} from 'signalib'
+} from '@gbdrummer/signalib'
 ```
 
 ## Quick example
@@ -41,7 +41,7 @@ import {
 This example watches one user in a Map and keeps a record of the change:
 
 ```js
-import { signal } from 'signalib'
+import { signal } from '@gbdrummer/signalib'
 
 const users = signal.map()
 const ada = users.key('ada')
@@ -254,7 +254,7 @@ Object mutators are `has`, `get`, `set`, `delete`, and `assign`.
 ### Maps
 
 ```js
-import { signal } from 'signalib'
+import { signal } from '@gbdrummer/signalib'
 
 const users = signal.map([
   ['ada', { name: 'Ada' }]
@@ -317,7 +317,7 @@ Collection signals let consumers observe structural or entry-level state without
 For example, a user directory can expose whole-collection changes, structural changes, one user's entry, derived state, and mutation records independently:
 
 ```js
-import { signal } from 'signalib'
+import { signal } from '@gbdrummer/signalib'
 
 const users = signal.map([
   ['ada', { name: 'Ada' }]
@@ -377,7 +377,7 @@ Consumers can therefore subscribe at the narrowest useful granularity:
 Stored collection mutations return immutable forward and inverse patch bundles. The operations are ordinary data that describe both what changed and how to undo it:
 
 ```js
-import { signal } from 'signalib'
+import { signal } from '@gbdrummer/signalib'
 
 const users = signal.map()
 
@@ -405,7 +405,7 @@ Patch bundles, patch arrays, and patch objects are frozen. Inverse patches are r
 Use `applyPatches(target, patches)` to replay either side of a collection patch bundle without writing an application-specific opcode interpreter:
 
 ```js
-import { applyPatches, signal } from 'signalib'
+import { applyPatches, signal } from '@gbdrummer/signalib'
 
 const users = signal.map()
 
@@ -431,7 +431,7 @@ Invalid targets, malformed patches, and unsupported operations throw clear error
 `createHistory({ target })` connects a writable Signalib collection directly to the patch-based history engine:
 
 ```js
-import { createHistory, signal } from 'signalib'
+import { createHistory, signal } from '@gbdrummer/signalib'
 
 const todos = signal.array([])
 const history = createHistory({ target: todos, limit: 100 })
@@ -454,10 +454,10 @@ Use `history.transaction(fn)` to group several recorded mutation bundles into on
 
 Undo and redo validate their complete patch list before mutation. If collection state commits and a subscriber then throws, the error is rethrown while the history stacks still move to reflect the committed state.
 
-For custom patch formats, the lower-level generic engine is available from `signalib/history`:
+For custom patch formats, the lower-level generic engine is available from `@gbdrummer/signalib/history`:
 
 ```js
-import createHistory from 'signalib/history'
+import createHistory from '@gbdrummer/signalib/history'
 ```
 
 See the generic engine's [standalone documentation](./src/history/README.md).
