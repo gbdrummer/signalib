@@ -182,8 +182,8 @@ export default function createArraySignal (initialValue) {
     return bundle
   }
 
-  function applyPatchBundle (patches) {
-    let validationValue = value.slice()
+  function validatePatchBundle (patches, initialValue = value) {
+    let validationValue = initialValue.slice()
 
     for (let i = 0; i < patches.length; i++) {
       const patch = patches[i]
@@ -213,6 +213,10 @@ export default function createArraySignal (initialValue) {
       unsupportedPatchOperation('Array', patch, i)
     }
 
+    return validationValue
+  }
+
+  function applyPatchBundle (patches) {
     return batch(() => {
       let didChange = false
       let i = 0
@@ -246,5 +250,8 @@ export default function createArraySignal (initialValue) {
     mutate,
 
     get index () { return getIndex() }
-  }, applyPatchBundle), subscriptions)
+  }, {
+    apply: applyPatchBundle,
+    validate: validatePatchBundle
+  }), subscriptions)
 }

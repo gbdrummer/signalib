@@ -208,7 +208,9 @@ export default function createObjectSignal (initialValue) {
     })
   }
 
-  function applyPatchBundle (patches) {
+  function validatePatchBundle (patches, initialValue = value) {
+    let validationValue = { ...initialValue }
+
     for (let i = 0; i < patches.length; i++) {
       const patch = patches[i]
       const op = getPatchOperation(patch, i, 'Object')
@@ -217,17 +219,24 @@ export default function createObjectSignal (initialValue) {
         if (!patch.value || typeof patch.value !== 'object' || Array.isArray(patch.value)) {
           throw new TypeError(`Object replace patch at index ${i} expects value to be an object`)
         }
+        validationValue = { ...patch.value }
         continue
       }
 
       if (op === 'set' || op === 'delete') {
         if (typeof patch.key !== 'string') throw new TypeError(`Object ${op} patch at index ${i} expects key to be a string`)
+        if (op === 'set') validationValue[patch.key] = patch.value
+        else delete validationValue[patch.key]
         continue
       }
 
       unsupportedPatchOperation('Object', patch, i)
     }
 
+    return validationValue
+  }
+
+  function applyPatchBundle (patches) {
     return batch(() => {
       let didChange = false
       let i = 0
@@ -261,5 +270,8 @@ export default function createObjectSignal (initialValue) {
     mutate,
 
     get index () { return getIndex() }
-  }, applyPatchBundle), subscriptions)
+  }, {
+    apply: applyPatchBundle,
+    validate: validatePatchBundle
+  }), subscriptions)
 }

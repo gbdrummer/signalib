@@ -448,7 +448,15 @@ history.redo() // restores the todo
 
 Use `history.transaction(fn)` to group several recorded mutation bundles into one undo step. Recording a new edit after `undo()` invalidates the redo stack.
 
-The lower-level `tracer-history` engine remains generic for applications with custom patch formats. See its [standalone documentation](./src/history/README.md).
+Undo and redo validate their complete patch list before mutation. If collection state commits and a subscriber then throws, the error is rethrown while the history stacks still move to reflect the committed state.
+
+For custom patch formats, the lower-level generic engine is available from `@gbdrummer/tracer/history`:
+
+```js
+import createHistory from '@gbdrummer/tracer/history'
+```
+
+See the generic engine's [standalone documentation](./src/history/README.md).
 
 ## Advanced features
 

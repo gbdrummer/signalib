@@ -5,6 +5,19 @@ export function attachPatchApplicator (target, applicator) {
   return target
 }
 
+function getPatchApplicator (target) {
+  const applicator = target?.[PATCH_APPLICATOR]
+  if (!applicator || typeof applicator.apply !== 'function' || typeof applicator.validate !== 'function') {
+    throw new TypeError('applyPatches(target, patches) expects target to be a writable Tracer collection signal')
+  }
+
+  return applicator
+}
+
+function assertPatchArray (patches) {
+  if (!Array.isArray(patches)) throw new TypeError('applyPatches(target, patches) expects patches to be an array')
+}
+
 export function getPatchOperation (patch, index, collectionType) {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
     throw new TypeError(`${collectionType} patch at index ${index} must be an object`)
@@ -21,13 +34,35 @@ export function unsupportedPatchOperation (collectionType, patch, index) {
   throw new TypeError(`${collectionType} patch operation "${patch.op}" at index ${index} is not supported`)
 }
 
-export default function applyPatches (target, patches) {
-  if (!Array.isArray(patches)) throw new TypeError('applyPatches(target, patches) expects patches to be an array')
+export function validatePatches (target, patches) {
+  assertPatchArray(patches)
+  return getPatchApplicator(target).validate(patches)
+}
 
-  const applicator = target?.[PATCH_APPLICATOR]
-  if (typeof applicator !== 'function') {
-    throw new TypeError('applyPatches(target, patches) expects target to be a writable Tracer collection signal')
+export function validatePatchBundle (target, bundle, context = 'perform') {
+  const patches = bundle?.patches
+  const inversePatches = bundle?.inversePatches
+
+  assertPatchArray(patches)
+  assertPatchArray(inversePatches)
+
+  const applicator = getPatchApplicator(target)
+
+  if (context === 'record') {
+    const previousValue = applicator.validate(inversePatches)
+    applicator.validate(patches, previousValue)
+    return
   }
 
-  return applicator(patches)
+  const nextValue = applicator.validate(patches)
+  applicator.validate(inversePatches, nextValue)
+}
+
+export function applyValidatedPatches (target, patches) {
+  return getPatchApplicator(target).apply(patches)
+}
+
+export default function applyPatches (target, patches) {
+  validatePatches(target, patches)
+  return applyValidatedPatches(target, patches)
 }

@@ -33,6 +33,9 @@ export interface History<Patch = unknown, Meta = unknown> {
 
 export interface CreateHistoryOptions<Patch, Meta = unknown> {
   readonly applyPatches: (patches: readonly Patch[]) => unknown
+  readonly validatePatches?: (patches: readonly Patch[]) => unknown
+  readonly validateBundle?: (bundle: PatchBundle<Patch, Meta>, context: 'record' | 'perform') => unknown
+  readonly batch?: <Result>(callback: () => Result) => Result
   readonly limit?: number
 }
 

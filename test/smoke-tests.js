@@ -1878,6 +1878,210 @@ export function runSmokeTests () {
     assertEqual(okCalls[0], 1, 'other subscriber should receive update value')
   })
 
+  test('history: clear preserves active and subsequent transaction nesting', () => {
+    const state = signal.object({ a: 0, b: 0, c: 0, d: 0 })
+    const history = createTracerHistory({ target: state })
+
+    history.record(state.mutate(object => object.set('a', 1)))
+
+    history.transaction(() => {
+      history.record(state.mutate(object => object.set('b', 1)))
+      history.clear()
+
+      history.transaction(() => {
+        history.clear()
+        history.record(state.mutate(object => object.set('c', 1)))
+      })
+
+      history.record(state.mutate(object => object.set('d', 1)))
+    })
+
+    let stacks = history.getStacks()
+    assertEqual(stacks.past.length, 1, 'clear inside nested transaction should preserve one active transaction step')
+    assertEqual(stacks.past[0].bundles.length, 2, 'only records after the final clear should remain pending')
+
+    assertEqual(history.undo(), true, 'transaction recorded after clear should be undoable')
+    assertEqual(state.getValue().a, 1, 'clear should discard earlier history without reverting state')
+    assertEqual(state.getValue().b, 1, 'clear should discard earlier pending records without reverting state')
+    assertEqual(state.getValue().c, 0, 'undo should restore the first retained transaction value')
+    assertEqual(state.getValue().d, 0, 'undo should restore the second retained transaction value')
+
+    assertEqual(history.redo(), true, 'transaction recorded after clear should be redoable')
+    assertEqual(state.getValue().c, 1, 'redo should restore the first retained transaction value')
+    assertEqual(state.getValue().d, 1, 'redo should restore the second retained transaction value')
+
+    history.transaction(() => {
+      history.record(state.mutate(object => object.set('c', 2)))
+      history.transaction(() => {
+        history.record(state.mutate(object => object.set('d', 2)))
+      })
+    })
+
+    stacks = history.getStacks()
+    assertEqual(stacks.past.length, 2, 'subsequent outer transaction should commit normally')
+    assertEqual(stacks.past[1].bundles.length, 2, 'subsequent nested transaction should remain grouped')
+  })
+
+  test('history: getStacks exposes an immutable history graph', () => {
+    const state = { count: 1 }
+    const sourcePatch = { op: 'set', key: 'count', value: 1 }
+    const meta = { label: 'user-owned' }
+    const history = createHistory({
+      applyPatches: patches => {
+        for (const patch of patches) state[patch.key] = patch.value
+      }
+    })
+
+    history.record({
+      patches: [sourcePatch],
+      inversePatches: [{ op: 'set', key: 'count', value: 0 }],
+      meta
+    })
+
+    sourcePatch.value = 99
+
+    const stacks = history.getStacks()
+    const step = stacks.past[0]
+    const bundle = step.bundles[0]
+
+    assert(Object.isFrozen(stacks), 'stack snapshot should be frozen')
+    assert(Object.isFrozen(stacks.past), 'returned past array should be frozen')
+    assert(Object.isFrozen(step), 'stored step should be frozen')
+    assert(Object.isFrozen(step.bundles), 'stored bundle array should be frozen')
+    assert(Object.isFrozen(bundle), 'stored bundle should be frozen')
+    assert(Object.isFrozen(bundle.patches), 'stored patch array should be frozen')
+    assert(Object.isFrozen(bundle.inversePatches), 'stored inverse patch array should be frozen')
+    assert(Object.isFrozen(bundle.patches[0]), 'stored patch object should be frozen')
+    assertEqual(Object.isFrozen(bundle.meta), false, 'user-owned meta should not be frozen')
+
+    const isTypeError = err => err instanceof TypeError
+    assertThrows(() => stacks.past.push(step), isTypeError, 'returned past array should reject mutation')
+    assertThrows(() => step.bundles.pop(), isTypeError, 'returned bundle array should reject mutation')
+    assertThrows(() => { step.bundles = [] }, isTypeError, 'step bundle reference should reject replacement')
+    assertThrows(() => bundle.patches.push({}), isTypeError, 'patch array should reject mutation')
+    assertThrows(() => { bundle.patches = [] }, isTypeError, 'bundle patch reference should reject replacement')
+    assertThrows(() => { bundle.inversePatches = [] }, isTypeError, 'bundle inverse reference should reject replacement')
+
+    meta.label = 'still user-owned'
+    assertEqual(history.getStacks().past[0].bundles[0].meta.label, 'still user-owned', 'meta should remain caller-owned by contract')
+    assertEqual(history.getStacks().past[0].bundles[0].patches[0].value, 1, 'source patch mutation should not affect stored history')
+
+    history.undo()
+    assertEqual(state.count, 0, 'history should remain operational after mutation attempts')
+  })
+
+  test('history: perform validates the complete bundle before changing state or stacks', () => {
+    const users = signal.map()
+    const history = createTracerHistory({ target: users })
+
+    history.record(users.mutate(map => map.set('seed', 1)))
+    history.undo()
+
+    const assertUnchanged = message => {
+      const stacks = history.getStacks()
+      assertEqual(users.size, 0, `${message}: target state should remain unchanged`)
+      assertEqual(stacks.past.length, 0, `${message}: past history should remain unchanged`)
+      assertEqual(stacks.future.length, 1, `${message}: future history should remain unchanged`)
+    }
+
+    assertThrows(
+      () => history.perform({ patches: [{ op: 'set', key: 'ada', value: 1 }] }),
+      /patches and inversePatches to be arrays/,
+      'missing inversePatches should throw before applying patches'
+    )
+    assertUnchanged('missing inversePatches')
+
+    assertThrows(
+      () => history.perform({ patches: 'invalid', inversePatches: [] }),
+      /patches and inversePatches to be arrays/,
+      'invalid patches should throw before applying patches'
+    )
+    assertUnchanged('invalid patches')
+
+    assertThrows(
+      () => history.perform({
+        patches: [{ op: 'set', key: 'ada', value: 1 }],
+        inversePatches: [{ op: 'unknown' }]
+      }),
+      /Map patch operation "unknown"/,
+      'invalid inverse operation should throw before applying valid forward patches'
+    )
+    assertUnchanged('invalid inverse operation')
+
+    assertThrows(
+      () => history.perform({
+        patches: [{ op: 'set', key: 'ada', value: 1 }, null],
+        inversePatches: [{ op: 'delete', key: 'ada' }]
+      }),
+      /Map patch at index 1 must be an object/,
+      'malformed patch entry should throw before partially applying a bundle'
+    )
+    assertUnchanged('malformed patch entry')
+  })
+
+  test('history: record validates bundles from their post-mutation state', () => {
+    const items = signal.array(['a', 'b'])
+    const history = createTracerHistory({ target: items })
+
+    const bundle = items.mutate(array => {
+      array.splice(0, 1)
+      array.set(0, 'c')
+    })
+
+    assertEqual(history.record(bundle), true, 'record should validate inverse patches from current post-mutation state')
+    assertEqual(history.undo(), true, 'recorded multi-operation Array bundle should undo')
+    assertEqual(items.getValue().join(','), 'a,b', 'undo should restore the pre-mutation Array state')
+    assertEqual(history.redo(), true, 'recorded multi-operation Array bundle should redo')
+    assertEqual(items.getValue().join(','), 'c', 'redo should restore the post-mutation Array state')
+  })
+
+  test('history: undo and redo move stacks before committed subscriber errors escape', () => {
+    const users = signal.map()
+    const history = createTracerHistory({ target: users })
+
+    history.transaction(() => {
+      history.record(users.mutate(map => map.set('ada', 1)))
+      history.record(users.mutate(map => map.set('grace', 2)))
+    })
+
+    users.subscribe(change => {
+      if (change.kind === 'update') throw new Error('collection subscriber failed')
+    })
+
+    assertThrows(() => history.undo(), /collection subscriber failed/, 'undo should expose subscriber errors')
+    assertEqual(users.size, 0, 'undo state should remain committed after subscriber error')
+    assertEqual(history.canUndo, false, 'undo stack should move after committed subscriber error')
+    assertEqual(history.canRedo, true, 'redo stack should reflect committed undo after subscriber error')
+
+    assertThrows(() => history.redo(), /collection subscriber failed/, 'redo should expose subscriber errors')
+    assertEqual(users.size, 2, 'redo state should remain committed after subscriber error')
+    assertEqual(history.canUndo, true, 'undo stack should reflect committed redo after subscriber error')
+    assertEqual(history.canRedo, false, 'redo stack should move after committed subscriber error')
+  })
+
+  test('history: undo and redo validation failures leave state and stacks unchanged', () => {
+    const undoTarget = signal.array([1])
+    const undoHistory = createTracerHistory({ target: undoTarget })
+    undoHistory.record(undoTarget.mutate(array => array.set(0, 2)))
+    undoTarget.setValue([])
+
+    assertThrows(() => undoHistory.undo(), /out of range/, 'undo should reject patches invalid for current state')
+    assertEqual(undoTarget.getValue().length, 0, 'failed undo should not change target state')
+    assertEqual(undoHistory.canUndo, true, 'failed undo should leave past history intact')
+    assertEqual(undoHistory.canRedo, false, 'failed undo should not create future history')
+
+    const redoTarget = signal.array([1])
+    const redoHistory = createTracerHistory({ target: redoTarget })
+    redoHistory.record(redoTarget.mutate(array => array.set(0, 2)))
+    redoHistory.undo()
+    redoTarget.setValue([])
+
+    assertThrows(() => redoHistory.redo(), /out of range/, 'redo should reject patches invalid for current state')
+    assertEqual(redoTarget.getValue().length, 0, 'failed redo should not change target state')
+    assertEqual(redoHistory.canUndo, false, 'failed redo should not restore past history')
+    assertEqual(redoHistory.canRedo, true, 'failed redo should leave future history intact')
+  })
+
   test('history: Tracer collection history handles several sequential mutations', () => {
     const users = signal.map()
     const history = createTracerHistory({ target: users, limit: 50 })

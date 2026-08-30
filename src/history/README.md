@@ -1,11 +1,8 @@
+# Tracer generic history engine
 
-# tracer-history
+The `@gbdrummer/tracer/history` subpath exports the generic patch-based history engine used by Tracer's integrated collection history. It can manage any state model that represents edits as patch bundles:
 
-Generic patch-based history tracker.
-
-`tracer-history` is a small, framework-agnostic history primitive for anything that can express its updates as **patch bundles**:
-
-```js
+```text
 {
   patches: Patch[],
   inversePatches: Patch[],
@@ -13,16 +10,7 @@ Generic patch-based history tracker.
 }
 ```
 
-When used directly, you provide `applyPatches(patches)`. `tracer-history` handles:
-
-- recording bundles
-- grouping multiple bundles into a single undo step via `transaction(fn)`
-- `undo()` / `redo()`
-- state notifications (`canUndo` / `canRedo`)
-
-This package is ESM-only (`"type": "module"`).
-
-Tracer collection users normally do not need to provide a patch applicator. The integrated API exported by `@gbdrummer/tracer` accepts the collection as its target and uses Tracer's `applyPatches()` internally:
+For writable Tracer collections, prefer the integrated root export. It supplies patch application, validation, and batching automatically:
 
 ```js
 import { createHistory, signal } from '@gbdrummer/tracer'
@@ -39,83 +27,64 @@ history.undo()
 history.redo()
 ```
 
-## Installation / Import
+Use the generic subpath for custom patch formats or non-Tracer state:
 
 ```js
-import createHistory from 'tracer-history'
-```
+import createHistory from '@gbdrummer/tracer/history'
 
-## API
+const state = { count: 0 }
 
-### `createHistory({ applyPatches, limit })`
-
-```js
 const history = createHistory({
   applyPatches: patches => {
-    // ...apply these patches to your app state...
+    for (const patch of patches) state[patch.key] = patch.value
   },
   limit: 100
 })
 ```
 
-- **`applyPatches: (patches: Patch[]) => void`** (required)
-  - Called by `undo()` and `redo()` (and by `perform()`) to mutate your state.
-- **`limit: number`** (optional, default `Infinity`)
-  - Max number of undo *steps* stored in `past`.
-  - `0` disables recording.
+## API
 
-Returns a `history` object with:
+### `createHistory(options)`
 
-- `history.record(bundle): boolean`
-- `history.perform(bundle): boolean`
-- `history.transaction(fn): any`
-- `history.undo(count = 1): boolean`
-- `history.redo(count = 1): boolean`
-- `history.clear(): void`
-- `history.getStacks(): { past, future }`
-- `history.subscribe(cb): () => void`
-- `history.canUndo` (getter)
-- `history.canRedo` (getter)
+Options:
 
-## Bundles and immutability
+- **`applyPatches(patches)`** (required): applies a complete patch list to application state.
+- **`limit`** (optional, default `Infinity`): maximum number of undo steps. `0` disables recording.
+- **`validatePatches(patches)`** (optional): validates a complete undo or redo list without mutating state.
+- **`validateBundle(bundle, context)`** (optional): validates both directions of a normalized bundle without mutating state. `context` is `"record"` when the edit has already occurred and `"perform"` when the edit has not yet occurred.
+- **`batch(callback)`** (optional): wraps patch application and history stack movement. This is useful when state notifications are deferred until the callback returns.
 
-When you call `record(bundle)` (or `perform(bundle)`), the bundle is normalized before storing:
+The integrated root API supplies all three optional correctness hooks. Generic consumers only need them when their patch format or notification model requires the corresponding guarantees.
 
-- `patches` and `inversePatches` must both be arrays.
-- Each element of `patches` / `inversePatches` is shallow-cloned (if it’s an object) and frozen.
-- The patch arrays themselves are frozen.
-- `meta` is attached as-is (`meta` is not cloned).
+The returned history object exposes:
 
-This makes stored history steps stable and prevents later accidental mutation of recorded patches.
+- `record(bundle): boolean`
+- `perform(bundle): boolean`
+- `transaction(callback): any`
+- `undo(count = 1): boolean`
+- `redo(count = 1): boolean`
+- `clear(): void`
+- `getStacks(): { past, future }`
+- `subscribe(callback): () => void`
+- `canUndo` and `canRedo` getters
 
-## Recording
+## Recording and performing
 
-### `history.record({ patches, inversePatches, meta? })`
+`record(bundle)` validates, normalizes, and stores an edit that application code has already performed. Recording a new edit clears the redo stack.
 
-Records a bundle as a new undo step.
+`perform(bundle)` is a convenience operation that:
 
-- Returns `true` if the bundle was accepted for recording.
-- Returns `false` if history is currently applying (`undo` / `redo`), or if `limit === 0`.
+1. normalizes and validates the complete bundle;
+2. applies its forward patches;
+3. records the already-normalized bundle.
 
-Calling `record()` clears the redo stack (`future`).
+Invalid bundle structure therefore cannot modify state. With `validateBundle`, semantic errors in either the forward or inverse patch list are also rejected before mutation.
 
-### `history.perform({ patches, inversePatches, meta? })`
+`record()` returns `false` while undo or redo is applying, preventing feedback loops. `perform()` throws if called during history application.
 
-Convenience method:
+## Transactions and clear
 
-1. calls your `applyPatches(patches)`
-2. calls `record(bundle)`
-
-Notes:
-
-- Throws if called while `undo()`/`redo()` is applying history.
-- Useful when you want the “do the thing” and “record the thing” to be one operation.
-
-## Transactions (grouping)
-
-### `history.transaction(fn)`
-
-`transaction(fn)` groups multiple `record()` calls into a single undo step.
+`transaction(callback)` groups every retained `record()` call into one undo step. Nested transactions join the outer transaction.
 
 ```js
 history.transaction(() => {
@@ -124,90 +93,28 @@ history.transaction(() => {
 })
 ```
 
-Behavior:
+Calling `clear()` empties past history, future history, and bundles currently pending in a transaction. It does not cancel or reset the active transaction context. Records made after `clear()` remain grouped by the surrounding transaction, and history-state notification remains deferred to the outer transaction boundary.
 
-- While inside a transaction, `record()` buffers bundles instead of immediately pushing a step.
-- On the outermost transaction exit, buffered bundles are committed as one step.
-- The redo stack (`future`) is cleared at transaction end.
+## Undo, redo, and errors
 
-## Undo / Redo
+Undo applies a step's inverse patches in reverse bundle order. Redo applies its forward patches in bundle order. Each step is presented to `applyPatches` as one combined list.
 
-### `history.undo(count = 1)`
+The integrated Tracer API batches the complete operation. If state commits successfully and a collection subscriber then throws, the subscriber error remains visible to the caller and history stacks still move to reflect the committed state. If validation or patch application fails before mutation, both state and stacks remain unchanged.
 
-- Applies `inversePatches` for the most recent step.
-- If the step contains multiple bundles (from a transaction), their `inversePatches` are applied in reverse bundle order.
-- Returns `true` if anything was undone.
+The generic engine cannot infer whether an arbitrary `applyPatches` callback threw before or after mutating custom state. A generic integration whose notifications can throw after commit should supply a `batch` hook that defers those errors until its callback returns. Otherwise, `applyPatches` should throw only before committing state.
 
-### `history.redo(count = 1)`
+## Immutability
 
-- Re-applies patches from the future stack.
-- If the step contains multiple bundles, their `patches` are applied in bundle order.
-- Returns `true` if anything was redone.
+History storage is protected from external mutation:
 
-Both `undo()` and `redo()` temporarily enter an “applying” mode. During that time:
+- normalized bundle objects are frozen;
+- patch arrays and inverse-patch arrays are copied and frozen;
+- object patches are shallow-copied and frozen;
+- step objects and their bundle arrays are frozen;
+- `getStacks()` returns frozen snapshot arrays.
 
-- `record()` returns `false`
-- `perform()` throws
+Patch payload values are not recursively cloned or frozen. `meta` is attached as-is and remains caller-owned; mutating it cannot replace the stored bundle, patch arrays, or history steps, but consumers should treat metadata as application data rather than immutable history structure.
 
-This prevents feedback loops where applying history would create new history.
+## State subscriptions
 
-## State + subscriptions
-
-### `history.canUndo`, `history.canRedo`
-
-Boolean getters.
-
-### `history.subscribe((nextState, previousState) => void)`
-
-Subscribe to `{ canUndo, canRedo }` changes.
-
-- The callback is called immediately with `(getState(), undefined)`.
-- It is called again only when `canUndo` or `canRedo` actually changes.
-- Returns an unsubscribe function.
-
-If a subscriber throws during notification, `tracer-history` will:
-
-- continue notifying other subscribers
-- rethrow the first error after finishing
-
-## Introspection
-
-### `history.getStacks()`
-
-Returns a snapshot:
-
-```js
-{
-  past: [{ bundles: Bundle[] }, ...],
-  future: [{ bundles: Bundle[] }, ...]
-}
-```
-
-Each step is shallow-copied, and `bundles` arrays are copied. (Bundle objects inside are the stored frozen bundles.)
-
-## Integration patterns
-
-### Integrating with Tracer
-
-Tracer collection mutations already produce `{ patches, inversePatches }` bundles.
-
-Use the integrated `createHistory({ target })` facade so application code never has to interpret collection patch operations:
-
-```js
-import { createHistory, signal } from '@gbdrummer/tracer'
-
-const todos = signal.array([])
-const history = createHistory({ target: todos, limit: 100 })
-
-function mutateWithHistory (fn) {
-  const bundle = todos.mutate(fn)
-  if (!bundle) return
-  history.record(bundle)
-}
-
-mutateWithHistory(m => m.push({ id: 1, title: 'Write docs' }))
-history.undo()
-history.redo()
-```
-
-The key invariant is: **when history applies patches during undo/redo, do not record them as new edits**. The history engine enforces this by making `record()` a no-op during application.
+`history.subscribe(callback)` immediately receives the current `{ canUndo, canRedo }` state and then runs only when either flag changes. Notification continues across subscriber failures and rethrows the first error after all subscribers have run.

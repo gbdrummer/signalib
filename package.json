@@ -32,6 +32,11 @@
       "types": "./index.d.ts",
       "import": "./src/index.js",
       "default": "./src/index.js"
+    },
+    "./history": {
+      "types": "./src/history/index.d.ts",
+      "import": "./src/history/index.js",
+      "default": "./src/history/index.js"
     }
   },
   "files": [

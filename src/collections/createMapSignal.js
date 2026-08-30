@@ -374,7 +374,9 @@ export default function createMapSignal (initialValue) {
     })
   }
 
-  function applyPatchBundle (patches) {
+  function validatePatchBundle (patches, initialValue = mapData) {
+    let validationValue = new Map(initialValue)
+
     for (let i = 0; i < patches.length; i++) {
       const patch = patches[i]
       const op = getPatchOperation(patch, i, 'Map')
@@ -382,18 +384,35 @@ export default function createMapSignal (initialValue) {
       if (op === 'replace') {
         if (!Array.isArray(patch.entries)) throw new TypeError(`Map replace patch at index ${i} expects entries to be an array`)
         try {
-          new Map(patch.entries)
+          validationValue = new Map(patch.entries)
         } catch {
           throw new TypeError(`Map replace patch at index ${i} expects entries to contain [key, value] pairs`)
         }
         continue
       }
 
-      if (op === 'set' || op === 'delete' || op === 'clear') continue
+      if (op === 'set') {
+        validationValue.set(patch.key, patch.value)
+        continue
+      }
+
+      if (op === 'delete') {
+        validationValue.delete(patch.key)
+        continue
+      }
+
+      if (op === 'clear') {
+        validationValue.clear()
+        continue
+      }
 
       unsupportedPatchOperation('Map', patch, i)
     }
 
+    return validationValue
+  }
+
+  function applyPatchBundle (patches) {
     return batch(() => {
       let didChange = false
       let i = 0
@@ -434,5 +453,8 @@ export default function createMapSignal (initialValue) {
     get: key => mapData.get(key),
 
     get size () { return mapData.size }
-  }, applyPatchBundle), subscriptions)
+  }, {
+    apply: applyPatchBundle,
+    validate: validatePatchBundle
+  }), subscriptions)
 }

@@ -325,21 +325,41 @@ export default function createSetSignal (initialValue) {
     })
   }
 
-  function applyPatchBundle (patches) {
+  function validatePatchBundle (patches, initialValue = setData) {
+    let validationValue = new Set(initialValue)
+
     for (let i = 0; i < patches.length; i++) {
       const patch = patches[i]
       const op = getPatchOperation(patch, i, 'Set')
 
       if (op === 'replace') {
         if (!Array.isArray(patch.values)) throw new TypeError(`Set replace patch at index ${i} expects values to be an array`)
+        validationValue = new Set(patch.values)
         continue
       }
 
-      if (op === 'add' || op === 'delete' || op === 'clear') continue
+      if (op === 'add') {
+        validationValue.add(patch.value)
+        continue
+      }
+
+      if (op === 'delete') {
+        validationValue.delete(patch.value)
+        continue
+      }
+
+      if (op === 'clear') {
+        validationValue.clear()
+        continue
+      }
 
       unsupportedPatchOperation('Set', patch, i)
     }
 
+    return validationValue
+  }
+
+  function applyPatchBundle (patches) {
     return batch(() => {
       let didChange = false
       let i = 0
@@ -379,5 +399,8 @@ export default function createSetSignal (initialValue) {
     has: v => setData.has(v),
 
     get size () { return setData.size }
-  }, applyPatchBundle), subscriptions)
+  }, {
+    apply: applyPatchBundle,
+    validate: validatePatchBundle
+  }), subscriptions)
 }
