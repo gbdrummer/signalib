@@ -48,7 +48,7 @@ export default function createDerivedSignal (compute) {
               constructorName = dependency?.constructor?.name,
               constructorInfo = constructorName ? ` (${constructorName})` : ''
 
-        throw new TypeError(`Derived signal expected TracerSignal instance as dependency, received ${tag}${constructorInfo}.`)
+        throw new TypeError(`Derived signal expected SignalibSignal instance as dependency, received ${tag}${constructorInfo}.`)
       }
 
       nextDependencies.add(dependency)

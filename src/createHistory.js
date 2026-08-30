@@ -10,7 +10,7 @@ export default function createHistory ({ target, limit = Infinity } = {}) {
   try {
     validatePatches(target, [])
   } catch {
-    throw new TypeError('createHistory({ target }) expects target to be a writable Tracer collection signal')
+    throw new TypeError('createHistory({ target }) expects target to be a writable Signalib collection signal')
   }
 
   return createPatchHistory({

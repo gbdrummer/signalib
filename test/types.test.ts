@@ -1,5 +1,5 @@
 import {
-  TracerSignal,
+  SignalibSignal,
   applyPatches,
   batch,
   createHistory,
@@ -10,7 +10,7 @@ import {
   type MapPatch,
   type PatchBundle,
   type SignalMap
-} from '@gbdrummer/tracer'
+} from 'signalib'
 
 const count = signal(0)
 count.setValue(1)
@@ -61,7 +61,7 @@ if (arrayChange) {
 }
 
 const derivedItems = signal.array($ => [$(count)])
-const derivedLength: number = derivedItems.index.length.getValue()
+const derivedLength: number = derivedItems.length.getValue()
 void derivedLength
 // @ts-expect-error derived collections are readonly
 derivedItems.mutate(array => array.push(2))
@@ -76,7 +76,11 @@ person.mutate(object => {
   object.assign({ name: 'Grace' })
 })
 const personName: string = person.getValue().name
+const personKeys: readonly string[] = person.keys.getValue()
+const personSize: number = person.size.getValue()
 void personName
+void personKeys
+void personSize
 
 interface User {
   name: string
@@ -91,9 +95,11 @@ const userChange = users.mutate(map => {
 
 const ada = users.key('ada')
 const maybeUser: User | undefined = ada.getValue().value
-const mapKeys: readonly string[] = users.index.keys.getValue()
+const mapKeys: readonly string[] = users.keys.getValue()
+const mapSize: number = users.size.getValue()
 void maybeUser
 void mapKeys
+void mapSize
 
 const inferredUsers = signal.map([['ada', { name: 'Ada', active: true }]])
 const inferredUser: { name: string, active: boolean } | undefined = inferredUsers.get('ada')
@@ -123,9 +129,11 @@ if (tagChange) {
 }
 
 const present: boolean = tags.value('signals').getValue().present
-const tagValues: readonly string[] = tags.index.values.getValue()
+const tagValues: readonly string[] = tags.values.getValue()
+const tagCount: number = tags.size.getValue()
 void present
 void tagValues
+void tagCount
 // @ts-expect-error Set values preserve their generic type
 tags.mutate(set => set.add(123))
 
@@ -148,5 +156,5 @@ if (isSignal(users)) {
   void value
 }
 
-const branded: boolean = users instanceof TracerSignal
+const branded: boolean = users instanceof SignalibSignal
 void branded

@@ -17,21 +17,21 @@ export interface UpdateChange<T, Meta = unknown> {
 export type SignalChange<T, Meta = unknown> = InitChange<T, Meta> | UpdateChange<T, Meta>
 export type Unsubscribe = () => boolean
 
-export interface TracerSignal<T = unknown, Meta = unknown> {
+export interface SignalibSignal<T = unknown, Meta = unknown> {
   readonly [SIGNAL_BRAND]: true
   readonly [Symbol.toStringTag]: string
   getValue(): T
   subscribe(callback: (change: SignalChange<T, Meta>) => void): Unsubscribe
 }
 
-export interface WritableSignal<T> extends TracerSignal<T> {
+export interface WritableSignal<T> extends SignalibSignal<T> {
   setValue(next: T | ((previous: T) => T)): boolean
 }
 
-export type DerivedSignal<T> = TracerSignal<T>
+export type DerivedSignal<T> = SignalibSignal<T>
 
 export interface Track {
-  <T>(dependency: TracerSignal<T, any>): T
+  <T>(dependency: SignalibSignal<T, any>): T
 }
 
 export interface ArraySetPatch<T> {
@@ -135,18 +135,14 @@ export interface ArrayMutator<T> {
   set(index: number, value: T): boolean
 }
 
-export interface SignalArray<T> extends TracerSignal<readonly T[], PatchBundle<ArrayPatch<T>>> {
+export interface SignalArray<T> extends SignalibSignal<readonly T[], PatchBundle<ArrayPatch<T>>> {
   setValue(next: readonly T[] | ((previous: readonly T[]) => readonly T[])): boolean
   mutate(callback: (array: ArrayMutator<T>) => void): MutationResult<ArrayPatch<T>>
-  readonly index: {
-    readonly length: TracerSignal<number>
-  }
+  readonly length: SignalibSignal<number>
 }
 
-export interface DerivedSignalArray<T> extends TracerSignal<readonly T[]> {
-  readonly index: {
-    readonly length: TracerSignal<number>
-  }
+export interface DerivedSignalArray<T> extends SignalibSignal<readonly T[]> {
+  readonly length: SignalibSignal<number>
 }
 
 export interface ObjectMutator<T extends object> {
@@ -157,20 +153,16 @@ export interface ObjectMutator<T extends object> {
   assign(partial: Partial<T> & Record<string, unknown>): boolean
 }
 
-export interface SignalObject<T extends object> extends TracerSignal<Readonly<T>, PatchBundle<ObjectPatch<T>>> {
+export interface SignalObject<T extends object> extends SignalibSignal<Readonly<T>, PatchBundle<ObjectPatch<T>>> {
   setValue(next: T | ((previous: Readonly<T>) => T)): boolean
   mutate(callback: (object: ObjectMutator<T>) => void): MutationResult<ObjectPatch<T>>
-  readonly index: {
-    readonly keys: TracerSignal<readonly string[]>
-    readonly size: TracerSignal<number>
-  }
+  readonly keys: SignalibSignal<readonly string[]>
+  readonly size: SignalibSignal<number>
 }
 
-export interface DerivedSignalObject<T extends object> extends TracerSignal<Readonly<T>> {
-  readonly index: {
-    readonly keys: TracerSignal<readonly string[]>
-    readonly size: TracerSignal<number>
-  }
+export interface DerivedSignalObject<T extends object> extends SignalibSignal<Readonly<T>> {
+  readonly keys: SignalibSignal<readonly string[]>
+  readonly size: SignalibSignal<number>
 }
 
 export interface MapEntry<V> {
@@ -192,28 +184,22 @@ export interface MapMutator<K, V> {
   values(): IterableIterator<V>
 }
 
-export interface SignalMap<K, V> extends TracerSignal<ReadonlyMap<K, V>, PatchBundle<MapPatch<K, V>>> {
+export interface SignalMap<K, V> extends SignalibSignal<ReadonlyMap<K, V>, PatchBundle<MapPatch<K, V>>> {
   setValue(next: MapInput<K, V> | ((previous: ReadonlyMap<K, V>) => MapInput<K, V>)): boolean
   mutate(callback: (map: MapMutator<K, V>) => void): MutationResult<MapPatch<K, V>>
-  key(key: K): TracerSignal<MapEntry<V>>
-  readonly index: {
-    readonly keys: TracerSignal<readonly K[]>
-    readonly size: TracerSignal<number>
-  }
+  key(key: K): SignalibSignal<MapEntry<V>>
+  readonly keys: SignalibSignal<readonly K[]>
+  readonly size: SignalibSignal<number>
   has(key: K): boolean
   get(key: K): V | undefined
-  readonly size: number
 }
 
-export interface DerivedSignalMap<K, V> extends TracerSignal<ReadonlyMap<K, V>> {
-  key(key: K): TracerSignal<MapEntry<V>>
-  readonly index: {
-    readonly keys: TracerSignal<readonly K[]>
-    readonly size: TracerSignal<number>
-  }
+export interface DerivedSignalMap<K, V> extends SignalibSignal<ReadonlyMap<K, V>> {
+  key(key: K): SignalibSignal<MapEntry<V>>
+  readonly keys: SignalibSignal<readonly K[]>
+  readonly size: SignalibSignal<number>
   has(key: K): boolean
   get(key: K): V | undefined
-  readonly size: number
 }
 
 export interface SetEntry {
@@ -233,26 +219,20 @@ export interface SetMutator<T> {
   entries(): IterableIterator<[T, T]>
 }
 
-export interface SignalSet<T> extends TracerSignal<ReadonlySet<T>, PatchBundle<SetPatch<T>>> {
+export interface SignalSet<T> extends SignalibSignal<ReadonlySet<T>, PatchBundle<SetPatch<T>>> {
   setValue(next: SetInput<T> | ((previous: ReadonlySet<T>) => SetInput<T>)): boolean
   mutate(callback: (set: SetMutator<T>) => void): MutationResult<SetPatch<T>>
-  value(value: T): TracerSignal<SetEntry>
-  readonly index: {
-    readonly values: TracerSignal<readonly T[]>
-    readonly size: TracerSignal<number>
-  }
+  value(value: T): SignalibSignal<SetEntry>
+  readonly values: SignalibSignal<readonly T[]>
+  readonly size: SignalibSignal<number>
   has(value: T): boolean
-  readonly size: number
 }
 
-export interface DerivedSignalSet<T> extends TracerSignal<ReadonlySet<T>> {
-  value(value: T): TracerSignal<SetEntry>
-  readonly index: {
-    readonly values: TracerSignal<readonly T[]>
-    readonly size: TracerSignal<number>
-  }
+export interface DerivedSignalSet<T> extends SignalibSignal<ReadonlySet<T>> {
+  value(value: T): SignalibSignal<SetEntry>
+  readonly values: SignalibSignal<readonly T[]>
+  readonly size: SignalibSignal<number>
   has(value: T): boolean
-  readonly size: number
 }
 
 export interface ArraySignalFactory {
@@ -288,15 +268,15 @@ export interface SignalFactory {
 
 export const signal: SignalFactory
 
-export interface OverridableSignal<T> extends TracerSignal<T> {
+export interface OverridableSignal<T> extends SignalibSignal<T> {
   setValue(next: T | ((previous: T) => T)): boolean
   clearOverride(): boolean
   readonly isOverridden: boolean
 }
 
-export function overridable<T>(base: TracerSignal<T, any>): OverridableSignal<T>
+export function overridable<T>(base: SignalibSignal<T, any>): OverridableSignal<T>
 export function batch<Result>(callback: () => Result): Result
-export function isSignal(value: unknown): value is TracerSignal<unknown>
+export function isSignal(value: unknown): value is SignalibSignal<unknown>
 
 export function applyPatches<T>(target: SignalArray<T>, patches: readonly ArrayPatch<T>[]): boolean
 export function applyPatches<T extends object>(target: SignalObject<T>, patches: readonly ObjectPatch<T>[]): boolean
@@ -340,7 +320,7 @@ export function createHistory<T extends object>(options: HistoryOptions<SignalOb
 export function createHistory<K, V>(options: HistoryOptions<SignalMap<K, V>>): History<MapPatch<K, V>>
 export function createHistory<T>(options: HistoryOptions<SignalSet<T>>): History<SetPatch<T>>
 
-export const TracerSignal: {
-  readonly prototype: TracerSignal<unknown>
-  [Symbol.hasInstance](value: unknown): value is TracerSignal<unknown>
+export const SignalibSignal: {
+  readonly prototype: SignalibSignal<unknown>
+  [Symbol.hasInstance](value: unknown): value is SignalibSignal<unknown>
 }

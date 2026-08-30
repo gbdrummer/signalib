@@ -77,11 +77,10 @@ function createDerivedSetSignal (compute) {
     getValue: source.getValue,
     value,
 
-    get index () { return getIndex() },
+    get values () { return getIndex().values },
+    get size () { return getIndex().size },
 
-    has: v => source.getValue().has(v),
-
-    get size () { return source.getValue().size }
+    has: v => source.getValue().has(v)
   }, source)
 }
 
@@ -394,11 +393,10 @@ export default function createSetSignal (initialValue) {
     mutate,
     value,
 
-    get index () { return getIndex() },
+    get values () { return getIndex().values },
+    get size () { return getIndex().size },
 
-    has: v => setData.has(v),
-
-    get size () { return setData.size }
+    has: v => setData.has(v)
   }, {
     apply: applyPatchBundle,
     validate: validatePatchBundle

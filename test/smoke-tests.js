@@ -1,6 +1,6 @@
-import { signal, overridable, batch, applyPatches, createHistory as createTracerHistory } from '../src/index.js'
+import { signal, overridable, batch, applyPatches, createHistory as createSignalibHistory } from '../src/index.js'
 import createHistory from '../src/history/index.js'
-import TracerSignal from '../src/core/TracerSignal.js'
+import SignalibSignal from '../src/core/SignalibSignal.js'
 import { SIGNAL_BRAND } from '../src/core/constants.js'
 import SubscriptionManager from '../src/core/SubscriptionManager.js'
 import { createUpdateChange } from '../src/core/change.js'
@@ -9,8 +9,8 @@ export function runSmokeTests () {
   const results = { pass: 0, fail: 0 }
 
   const STRESS = (
-    (typeof process !== 'undefined' && process?.env?.TRACER_STRESS === '1') ||
-    globalThis.TRACER_STRESS === true
+    (typeof process !== 'undefined' && process?.env?.SIGNALIB_STRESS === '1') ||
+    globalThis.SIGNALIB_STRESS === true
   )
 
   const assert = (condition, message) => {
@@ -105,11 +105,11 @@ export function runSmokeTests () {
     test(`stress: ${name}`, fn)
   }
 
-  test('branding: instanceof TracerSignal', () => {
+  test('branding: instanceof SignalibSignal', () => {
     const stored = signal(0)
     const derived = signal(track => track(stored))
-    assert(stored instanceof TracerSignal, 'stored signal should be instanceof TracerSignal')
-    assert(derived instanceof TracerSignal, 'derived signal should be instanceof TracerSignal')
+    assert(stored instanceof SignalibSignal, 'stored signal should be instanceof SignalibSignal')
+    assert(derived instanceof SignalibSignal, 'derived signal should be instanceof SignalibSignal')
   })
 
   stress('subscriber fanout (5k)', () => {
@@ -953,7 +953,7 @@ export function runSmokeTests () {
     a.subscribe(change => change.kind === 'update' && keyCalls.a.push(change.nextValue))
     added.subscribe(change => change.kind === 'update' && keyCalls.added.push(change.nextValue))
     removed.subscribe(change => change.kind === 'update' && keyCalls.removed.push(change.nextValue))
-    m.index.keys.subscribe(change => change.kind === 'update' && keysCalls.push(change.nextValue))
+    m.keys.subscribe(change => change.kind === 'update' && keysCalls.push(change.nextValue))
 
     const bundle = m.mutate(map => {
       map.set('a', 2)
@@ -1001,7 +1001,7 @@ export function runSmokeTests () {
     const lengthCalls = []
 
     arr.subscribe(change => change.kind === 'update' && valueCalls.push(change))
-    arr.index.length.subscribe(change => change.kind === 'update' && lengthCalls.push(change.nextValue))
+    arr.length.subscribe(change => change.kind === 'update' && lengthCalls.push(change.nextValue))
 
     const bundle = arr.mutate(array => {
       array.set(0, 10)
@@ -1034,7 +1034,7 @@ export function runSmokeTests () {
     const keysCalls = []
 
     obj.subscribe(change => change.kind === 'update' && valueCalls.push(change))
-    obj.index.keys.subscribe(change => change.kind === 'update' && keysCalls.push(change.nextValue))
+    obj.keys.subscribe(change => change.kind === 'update' && keysCalls.push(change.nextValue))
 
     const bundle = obj.mutate(object => {
       object.set('a', 2)
@@ -1102,7 +1102,7 @@ export function runSmokeTests () {
     assertEqual(removedCalls.length, 1, 'removed-value signal should notify once for forward application')
 
     applyPatches(s, [{ op: 'clear' }, { op: 'replace', values: ['final'] }])
-    assertEqual(s.size, 1, 'Set clear and replace patches should be supported')
+    assertEqual(s.size.getValue(), 1, 'Set clear and replace patches should be supported')
     assertEqual(s.has('final'), true, 'Set replace patch should install replacement values')
   })
 
@@ -1110,10 +1110,10 @@ export function runSmokeTests () {
     const m = signal.map([['a', 1]])
 
     applyPatches(m, [{ op: 'clear' }])
-    assertEqual(m.size, 0, 'Map clear patch should remove all entries')
+    assertEqual(m.size.getValue(), 0, 'Map clear patch should remove all entries')
 
     applyPatches(m, [{ op: 'replace', entries: [['b', 2], ['c', 3]] }])
-    assertEqual(m.size, 2, 'Map replace patch should install replacement entries')
+    assertEqual(m.size.getValue(), 2, 'Map replace patch should install replacement entries')
     assertEqual(m.get('b'), 2, 'Map replace patch should preserve entry values')
   })
 
@@ -1157,15 +1157,15 @@ export function runSmokeTests () {
 
     assertEqual(m.has('b'), false, 'validation failure should not partially apply earlier patches')
     assertThrows(() => applyPatches(m, null), /expects patches to be an array/, 'patches should be an array')
-    assertThrows(() => applyPatches(signal(1), []), /writable Tracer collection signal/, 'target should be a writable collection')
+    assertThrows(() => applyPatches(signal(1), []), /writable Signalib collection signal/, 'target should be a writable collection')
     assertEqual(applyPatches(m, []), false, 'empty patch bundles should be a no-op')
   })
 
-  test('array.index.length notifies only when length changes', () => {
+  test('array.length notifies only when length changes', () => {
     const arr = signal.array([1, 2])
     const calls = []
 
-    arr.index.length.subscribe(change => {
+    arr.length.subscribe(change => {
       if (change.kind === 'init') return
       calls.push(change.nextValue)
     })
@@ -1204,7 +1204,7 @@ export function runSmokeTests () {
     unsubscribe()
   })
 
-  test('derived array: index length derives from computed value', () => {
+  test('derived array: length signal derives from computed value', () => {
     const includeSecond = signal(false)
     const first = signal('Graham')
     const second = signal('Ada')
@@ -1217,17 +1217,17 @@ export function runSmokeTests () {
 
     const lengthCalls = []
 
-    names.index.length.subscribe(change => {
+    names.length.subscribe(change => {
       if (change.kind === 'init') return
       lengthCalls.push(change.nextValue)
     })
 
     first.setValue('Grace')
-    assertEqual(lengthCalls.length, 0, 'derived array length index should not notify when length is unchanged')
+    assertEqual(lengthCalls.length, 0, 'derived array length signal should not notify when length is unchanged')
 
     includeSecond.setValue(true)
-    assertEqual(lengthCalls.length, 1, 'derived array length index should notify when length changes')
-    assertEqual(lengthCalls[0], 2, 'derived array length index should update')
+    assertEqual(lengthCalls.length, 1, 'derived array length signal should notify when length changes')
+    assertEqual(lengthCalls[0], 2, 'derived array length signal should update')
   })
 
   test('derived array: validates computed value', () => {
@@ -1251,29 +1251,29 @@ export function runSmokeTests () {
     assertEqual(source.activeSubscriberCount, 0, 'derived array should tear down upstream when cold')
   })
 
-  test('object.index.keys/size notifies only when key set changes', () => {
+  test('object keys/size signals notify only when key set changes', () => {
     const obj = signal.object({ a: 1, b: 2 })
     const keysCalls = []
     const sizeCalls = []
 
-    obj.index.keys.subscribe(change => {
+    obj.keys.subscribe(change => {
       if (change.kind === 'init') return
       keysCalls.push(change.nextValue)
     })
 
-    obj.index.size.subscribe(change => {
+    obj.size.subscribe(change => {
       if (change.kind === 'init') return
       sizeCalls.push(change.nextValue)
     })
 
     obj.mutate(m => m.set('a', 10))
-    assertEqual(keysCalls.length, 0, 'updating existing key should not change keys index')
-    assertEqual(sizeCalls.length, 0, 'updating existing key should not change size index')
+    assertEqual(keysCalls.length, 0, 'updating existing key should not change keys signal')
+    assertEqual(sizeCalls.length, 0, 'updating existing key should not change size signal')
 
     obj.mutate(m => m.set('c', 3))
-    assertEqual(keysCalls.length, 1, 'adding new key should update keys index')
-    assertEqual(sizeCalls.length, 1, 'adding new key should update size index')
-    assertEqual(sizeCalls[0], 3, 'size index should be updated')
+    assertEqual(keysCalls.length, 1, 'adding new key should update keys signal')
+    assertEqual(sizeCalls.length, 1, 'adding new key should update size signal')
+    assertEqual(sizeCalls[0], 3, 'size signal should be updated')
   })
 
   test('derived object: recomputes from tracked dependencies and is readonly', () => {
@@ -1305,7 +1305,7 @@ export function runSmokeTests () {
     unsubscribe()
   })
 
-  test('derived object: index keys and size derive from computed value', () => {
+  test('derived object: keys and size signals derive from computed value', () => {
     const includeAge = signal(false)
     const name = signal('Graham')
     const age = signal(41)
@@ -1319,26 +1319,26 @@ export function runSmokeTests () {
     const keysCalls = []
     const sizeCalls = []
 
-    person.index.keys.subscribe(change => {
+    person.keys.subscribe(change => {
       if (change.kind === 'init') return
       keysCalls.push(change.nextValue)
     })
 
-    person.index.size.subscribe(change => {
+    person.size.subscribe(change => {
       if (change.kind === 'init') return
       sizeCalls.push(change.nextValue)
     })
 
     name.setValue('Ada')
-    assertEqual(keysCalls.length, 0, 'derived object key index should not notify when keys are unchanged')
-    assertEqual(sizeCalls.length, 0, 'derived object size index should not notify when keys are unchanged')
+    assertEqual(keysCalls.length, 0, 'derived object keys signal should not notify when keys are unchanged')
+    assertEqual(sizeCalls.length, 0, 'derived object size signal should not notify when keys are unchanged')
 
     includeAge.setValue(true)
-    assertEqual(keysCalls.length, 1, 'derived object key index should notify when keys change')
-    assertEqual(keysCalls[0].length, 2, 'derived object key index should include added key')
-    assertEqual(keysCalls[0][1], 'age', 'derived object key index should preserve key order')
-    assertEqual(sizeCalls.length, 1, 'derived object size index should notify when size changes')
-    assertEqual(sizeCalls[0], 2, 'derived object size index should update')
+    assertEqual(keysCalls.length, 1, 'derived object keys signal should notify when keys change')
+    assertEqual(keysCalls[0].length, 2, 'derived object keys signal should include added key')
+    assertEqual(keysCalls[0][1], 'age', 'derived object keys signal should preserve key order')
+    assertEqual(sizeCalls.length, 1, 'derived object size signal should notify when size changes')
+    assertEqual(sizeCalls[0], 2, 'derived object size signal should update')
   })
 
   test('derived object: validates computed value', () => {
@@ -1362,29 +1362,29 @@ export function runSmokeTests () {
     assertEqual(source.activeSubscriberCount, 0, 'derived object should tear down upstream when cold')
   })
 
-  test('map.index.keys/size notifies only when keys change', () => {
+  test('map keys/size signals notify only when keys change', () => {
     const m = signal.map([['a', 1]])
     const keysCalls = []
     const sizeCalls = []
 
-    m.index.keys.subscribe(change => {
+    m.keys.subscribe(change => {
       if (change.kind === 'init') return
       keysCalls.push(change.nextValue)
     })
 
-    m.index.size.subscribe(change => {
+    m.size.subscribe(change => {
       if (change.kind === 'init') return
       sizeCalls.push(change.nextValue)
     })
 
     m.mutate(mm => mm.set('a', 2))
-    assertEqual(keysCalls.length, 0, 'updating existing key should not change keys index')
-    assertEqual(sizeCalls.length, 0, 'updating existing key should not change size index')
+    assertEqual(keysCalls.length, 0, 'updating existing key should not change keys signal')
+    assertEqual(sizeCalls.length, 0, 'updating existing key should not change size signal')
 
     m.mutate(mm => mm.set('b', 3))
-    assertEqual(keysCalls.length, 1, 'adding new key should update keys index')
-    assertEqual(sizeCalls.length, 1, 'adding new key should update size index')
-    assertEqual(sizeCalls[0], 2, 'size index should be updated')
+    assertEqual(keysCalls.length, 1, 'adding new key should update keys signal')
+    assertEqual(sizeCalls.length, 1, 'adding new key should update size signal')
+    assertEqual(sizeCalls[0], 2, 'size signal should be updated')
   })
 
   test('derived map: recomputes from tracked dependencies and is readonly', () => {
@@ -1398,7 +1398,7 @@ export function runSmokeTests () {
 
     assertEqual(person.get('name'), 'Graham', 'derived map should expose initial name value')
     assertEqual(person.get('age'), 41, 'derived map should expose initial age value')
-    assertEqual(person.size, 2, 'derived map should expose computed size')
+    assertEqual(person.size.getValue(), 2, 'derived map should expose computed size signal')
     assertEqual(person.setValue, undefined, 'derived map should not expose setValue')
     assertEqual(person.mutate, undefined, 'derived map should not expose mutate')
 
@@ -1417,7 +1417,7 @@ export function runSmokeTests () {
     unsubscribe()
   })
 
-  test('derived map: index keys and size derive from computed value', () => {
+  test('derived map: keys and size signals derive from computed value', () => {
     const includeAge = signal(false)
     const name = signal('Graham')
     const age = signal(41)
@@ -1431,25 +1431,25 @@ export function runSmokeTests () {
     const keysCalls = []
     const sizeCalls = []
 
-    person.index.keys.subscribe(change => {
+    person.keys.subscribe(change => {
       if (change.kind === 'init') return
       keysCalls.push(change.nextValue)
     })
 
-    person.index.size.subscribe(change => {
+    person.size.subscribe(change => {
       if (change.kind === 'init') return
       sizeCalls.push(change.nextValue)
     })
 
     name.setValue('Ada')
-    assertEqual(keysCalls.length, 0, 'derived map key index should not notify when keys are unchanged')
-    assertEqual(sizeCalls.length, 0, 'derived map size index should not notify when size is unchanged')
+    assertEqual(keysCalls.length, 0, 'derived map keys signal should not notify when keys are unchanged')
+    assertEqual(sizeCalls.length, 0, 'derived map size signal should not notify when size is unchanged')
 
     includeAge.setValue(true)
-    assertEqual(keysCalls.length, 1, 'derived map key index should notify when keys change')
-    assertEqual(keysCalls[0][1], 'age', 'derived map key index should preserve key order')
-    assertEqual(sizeCalls.length, 1, 'derived map size index should notify when size changes')
-    assertEqual(sizeCalls[0], 2, 'derived map size index should update')
+    assertEqual(keysCalls.length, 1, 'derived map keys signal should notify when keys change')
+    assertEqual(keysCalls[0][1], 'age', 'derived map keys signal should preserve key order')
+    assertEqual(sizeCalls.length, 1, 'derived map size signal should notify when size changes')
+    assertEqual(sizeCalls[0], 2, 'derived map size signal should update')
   })
 
   test('derived map: key(k) is stable and notifies only on relevant changes', () => {
@@ -1518,30 +1518,30 @@ export function runSmokeTests () {
     assertEqual(source.activeSubscriberCount, 0, 'derived map should tear down upstream when cold')
   })
 
-  test('set.index.values/size notifies on membership changes', () => {
+  test('set values/size signals notify on membership changes', () => {
     const s = signal.set(['a'])
     const valuesCalls = []
     const sizeCalls = []
 
-    s.index.values.subscribe(change => {
+    s.values.subscribe(change => {
       if (change.kind === 'init') return
       valuesCalls.push(change.nextValue)
     })
 
-    s.index.size.subscribe(change => {
+    s.size.subscribe(change => {
       if (change.kind === 'init') return
       sizeCalls.push(change.nextValue)
     })
 
     s.mutate(ss => ss.add('b'))
-    assertEqual(valuesCalls.length, 1, 'add should update values index')
-    assertEqual(sizeCalls.length, 1, 'add should update size index')
-    assertEqual(sizeCalls[0], 2, 'size index should be updated')
+    assertEqual(valuesCalls.length, 1, 'add should update values signal')
+    assertEqual(sizeCalls.length, 1, 'add should update size signal')
+    assertEqual(sizeCalls[0], 2, 'size signal should be updated')
 
     s.mutate(ss => ss.delete('a'))
-    assertEqual(valuesCalls.length, 2, 'delete should update values index')
-    assertEqual(sizeCalls.length, 2, 'delete should update size index')
-    assertEqual(sizeCalls[1], 1, 'size index should be updated')
+    assertEqual(valuesCalls.length, 2, 'delete should update values signal')
+    assertEqual(sizeCalls.length, 2, 'delete should update size signal')
+    assertEqual(sizeCalls[1], 1, 'size signal should be updated')
   })
 
   test('derived set: recomputes from tracked dependencies and is readonly', () => {
@@ -1552,7 +1552,7 @@ export function runSmokeTests () {
 
     assertEqual(names.has('Graham'), true, 'derived set should expose initial first value')
     assertEqual(names.has('Ada'), true, 'derived set should expose initial second value')
-    assertEqual(names.size, 2, 'derived set should expose computed size')
+    assertEqual(names.size.getValue(), 2, 'derived set should expose computed size signal')
     assertEqual(names.setValue, undefined, 'derived set should not expose setValue')
     assertEqual(names.mutate, undefined, 'derived set should not expose mutate')
 
@@ -1571,7 +1571,7 @@ export function runSmokeTests () {
     unsubscribe()
   })
 
-  test('derived set: index values and size derive from computed value', () => {
+  test('derived set: values and size signals derive from computed value', () => {
     const includeSecond = signal(false)
     const first = signal('Graham')
     const second = signal('Ada')
@@ -1585,26 +1585,26 @@ export function runSmokeTests () {
     const valuesCalls = []
     const sizeCalls = []
 
-    names.index.values.subscribe(change => {
+    names.values.subscribe(change => {
       if (change.kind === 'init') return
       valuesCalls.push(change.nextValue)
     })
 
-    names.index.size.subscribe(change => {
+    names.size.subscribe(change => {
       if (change.kind === 'init') return
       sizeCalls.push(change.nextValue)
     })
 
     first.setValue('Grace')
-    assertEqual(valuesCalls.length, 1, 'derived set values index should notify when values change')
-    assertEqual(valuesCalls[0][0], 'Grace', 'derived set values index should preserve order')
-    assertEqual(sizeCalls.length, 0, 'derived set size index should not notify when size is unchanged')
+    assertEqual(valuesCalls.length, 1, 'derived set values signal should notify when values change')
+    assertEqual(valuesCalls[0][0], 'Grace', 'derived set values signal should preserve order')
+    assertEqual(sizeCalls.length, 0, 'derived set size signal should not notify when size is unchanged')
 
     includeSecond.setValue(true)
-    assertEqual(valuesCalls.length, 2, 'derived set values index should notify when values are added')
-    assertEqual(valuesCalls[1][1], 'Ada', 'derived set values index should include added value')
-    assertEqual(sizeCalls.length, 1, 'derived set size index should notify when size changes')
-    assertEqual(sizeCalls[0], 2, 'derived set size index should update')
+    assertEqual(valuesCalls.length, 2, 'derived set values signal should notify when values are added')
+    assertEqual(valuesCalls[1][1], 'Ada', 'derived set values signal should include added value')
+    assertEqual(sizeCalls.length, 1, 'derived set size signal should notify when size changes')
+    assertEqual(sizeCalls[0], 2, 'derived set size signal should update')
   })
 
   test('derived set: value(v) is stable and notifies only on membership changes', () => {
@@ -1660,18 +1660,18 @@ export function runSmokeTests () {
       valueCalls.push([...change.nextValue.keys()])
     })
 
-    const indexKeysCalls = []
-    m.index.keys.subscribe(change => {
+    const keysCalls = []
+    m.keys.subscribe(change => {
       if (change.kind === 'init') return
-      indexKeysCalls.push(change.nextValue)
+      keysCalls.push(change.nextValue)
     })
 
     m.setValue([['b', 2], ['a', 1]])
 
     assertEqual(valueCalls.length, 1, 'should notify on order-only change')
     assertEqual(valueCalls[0][0], 'b', 'iteration order should update')
-    assertEqual(indexKeysCalls.length, 1, 'index.keys should notify on order-only change')
-    assertEqual(indexKeysCalls[0][0], 'b', 'index.keys should reflect new order')
+    assertEqual(keysCalls.length, 1, 'keys signal should notify on order-only change')
+    assertEqual(keysCalls[0][0], 'b', 'keys signal should reflect new order')
   })
 
   test('set: setValue notifies when iteration order changes', () => {
@@ -1683,18 +1683,18 @@ export function runSmokeTests () {
       valueCalls.push([...change.nextValue.values()])
     })
 
-    const indexValuesCalls = []
-    s.index.values.subscribe(change => {
+    const valuesCalls = []
+    s.values.subscribe(change => {
       if (change.kind === 'init') return
-      indexValuesCalls.push(change.nextValue)
+      valuesCalls.push(change.nextValue)
     })
 
     s.setValue(['b', 'a'])
 
     assertEqual(valueCalls.length, 1, 'should notify on order-only change')
     assertEqual(valueCalls[0][0], 'b', 'iteration order should update')
-    assertEqual(indexValuesCalls.length, 1, 'index.values should notify on order-only change')
-    assertEqual(indexValuesCalls[0][0], 'b', 'index.values should reflect new order')
+    assertEqual(valuesCalls.length, 1, 'values signal should notify on order-only change')
+    assertEqual(valuesCalls[0][0], 'b', 'values signal should reflect new order')
   })
 
   test('patch bundles are deeply immutable (meta + return values)', () => {
@@ -1880,7 +1880,7 @@ export function runSmokeTests () {
 
   test('history: clear preserves active and subsequent transaction nesting', () => {
     const state = signal.object({ a: 0, b: 0, c: 0, d: 0 })
-    const history = createTracerHistory({ target: state })
+    const history = createSignalibHistory({ target: state })
 
     history.record(state.mutate(object => object.set('a', 1)))
 
@@ -1972,14 +1972,14 @@ export function runSmokeTests () {
 
   test('history: perform validates the complete bundle before changing state or stacks', () => {
     const users = signal.map()
-    const history = createTracerHistory({ target: users })
+    const history = createSignalibHistory({ target: users })
 
     history.record(users.mutate(map => map.set('seed', 1)))
     history.undo()
 
     const assertUnchanged = message => {
       const stacks = history.getStacks()
-      assertEqual(users.size, 0, `${message}: target state should remain unchanged`)
+      assertEqual(users.size.getValue(), 0, `${message}: target state should remain unchanged`)
       assertEqual(stacks.past.length, 0, `${message}: past history should remain unchanged`)
       assertEqual(stacks.future.length, 1, `${message}: future history should remain unchanged`)
     }
@@ -2021,7 +2021,7 @@ export function runSmokeTests () {
 
   test('history: record validates bundles from their post-mutation state', () => {
     const items = signal.array(['a', 'b'])
-    const history = createTracerHistory({ target: items })
+    const history = createSignalibHistory({ target: items })
 
     const bundle = items.mutate(array => {
       array.splice(0, 1)
@@ -2037,7 +2037,7 @@ export function runSmokeTests () {
 
   test('history: undo and redo move stacks before committed subscriber errors escape', () => {
     const users = signal.map()
-    const history = createTracerHistory({ target: users })
+    const history = createSignalibHistory({ target: users })
 
     history.transaction(() => {
       history.record(users.mutate(map => map.set('ada', 1)))
@@ -2049,19 +2049,19 @@ export function runSmokeTests () {
     })
 
     assertThrows(() => history.undo(), /collection subscriber failed/, 'undo should expose subscriber errors')
-    assertEqual(users.size, 0, 'undo state should remain committed after subscriber error')
+    assertEqual(users.size.getValue(), 0, 'undo state should remain committed after subscriber error')
     assertEqual(history.canUndo, false, 'undo stack should move after committed subscriber error')
     assertEqual(history.canRedo, true, 'redo stack should reflect committed undo after subscriber error')
 
     assertThrows(() => history.redo(), /collection subscriber failed/, 'redo should expose subscriber errors')
-    assertEqual(users.size, 2, 'redo state should remain committed after subscriber error')
+    assertEqual(users.size.getValue(), 2, 'redo state should remain committed after subscriber error')
     assertEqual(history.canUndo, true, 'undo stack should reflect committed redo after subscriber error')
     assertEqual(history.canRedo, false, 'redo stack should move after committed subscriber error')
   })
 
   test('history: undo and redo validation failures leave state and stacks unchanged', () => {
     const undoTarget = signal.array([1])
-    const undoHistory = createTracerHistory({ target: undoTarget })
+    const undoHistory = createSignalibHistory({ target: undoTarget })
     undoHistory.record(undoTarget.mutate(array => array.set(0, 2)))
     undoTarget.setValue([])
 
@@ -2071,7 +2071,7 @@ export function runSmokeTests () {
     assertEqual(undoHistory.canRedo, false, 'failed undo should not create future history')
 
     const redoTarget = signal.array([1])
-    const redoHistory = createTracerHistory({ target: redoTarget })
+    const redoHistory = createSignalibHistory({ target: redoTarget })
     redoHistory.record(redoTarget.mutate(array => array.set(0, 2)))
     redoHistory.undo()
     redoTarget.setValue([])
@@ -2082,9 +2082,9 @@ export function runSmokeTests () {
     assertEqual(redoHistory.canRedo, true, 'failed redo should leave future history intact')
   })
 
-  test('history: Tracer collection history handles several sequential mutations', () => {
+  test('history: Signalib collection history handles several sequential mutations', () => {
     const users = signal.map()
-    const history = createTracerHistory({ target: users, limit: 50 })
+    const history = createSignalibHistory({ target: users, limit: 50 })
 
     function mutate (fn) {
       const change = users.mutate(fn)
@@ -2095,7 +2095,7 @@ export function runSmokeTests () {
     mutate(map => map.set('grace', { name: 'Grace' }))
     mutate(map => map.set('ada', { name: 'Ada Lovelace' }))
 
-    assertEqual(users.size, 2, 'all sequential edits should be applied')
+    assertEqual(users.size.getValue(), 2, 'all sequential edits should be applied')
     assertEqual(users.get('ada').name, 'Ada Lovelace', 'latest sequential edit should win')
 
     assertEqual(history.undo(2), true, 'undo(count) should undo several mutations')
@@ -2107,9 +2107,9 @@ export function runSmokeTests () {
     assertEqual(users.has('grace'), true, 'redo should restore the added entry')
   })
 
-  test('history: Tracer transaction groups collection mutations into one step', () => {
+  test('history: Signalib transaction groups collection mutations into one step', () => {
     const state = signal.object({ first: 0, second: 0 })
-    const history = createTracerHistory({ target: state })
+    const history = createSignalibHistory({ target: state })
 
     history.transaction(() => {
       history.record(state.mutate(object => object.set('first', 1)))
@@ -2125,9 +2125,9 @@ export function runSmokeTests () {
     assertEqual(state.getValue().second, 2, 'transaction redo should restore the second edit')
   })
 
-  test('history: Tracer redo stack is invalidated by a new edit', () => {
+  test('history: Signalib redo stack is invalidated by a new edit', () => {
     const items = signal.array([])
-    const history = createTracerHistory({ target: items })
+    const history = createSignalibHistory({ target: items })
 
     history.record(items.mutate(array => array.push('first')))
     history.record(items.mutate(array => array.push('second')))
@@ -2141,16 +2141,16 @@ export function runSmokeTests () {
     assertEqual(items.getValue().join(','), 'first,replacement', 'new edit should remain after redo invalidation')
   })
 
-  test('history: Tracer integration validates its collection target', () => {
+  test('history: Signalib integration validates its collection target', () => {
     assertThrows(
-      () => createTracerHistory({ target: signal(0) }),
-      /writable Tracer collection signal/,
+      () => createSignalibHistory({ target: signal(0) }),
+      /writable Signalib collection signal/,
       'stored scalar target should be rejected'
     )
 
     assertThrows(
-      () => createTracerHistory({ target: signal.map(() => []) }),
-      /writable Tracer collection signal/,
+      () => createSignalibHistory({ target: signal.map(() => []) }),
+      /writable Signalib collection signal/,
       'derived collection target should be rejected'
     )
   })

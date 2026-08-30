@@ -8,7 +8,7 @@ export default function overridable (base) {
     const tag = Object.prototype.toString.call(base)
     const constructorName = base?.constructor?.name
     const constructorInfo = constructorName ? ` (${constructorName})` : ''
-    throw new TypeError(`overridable(base) expected TracerSignal instance, received ${tag}${constructorInfo}.`)
+    throw new TypeError(`overridable(base) expected SignalibSignal instance, received ${tag}${constructorInfo}.`)
   }
 
   let isOverridden = false

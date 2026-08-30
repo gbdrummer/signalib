@@ -1,6 +1,6 @@
-# Tracer generic history engine
+# Signalib generic history engine
 
-The `@gbdrummer/tracer/history` subpath exports the generic patch-based history engine used by Tracer's integrated collection history. It can manage any state model that represents edits as patch bundles:
+The `signalib/history` subpath exports the generic patch-based history engine used by Signalib's integrated collection history. It can manage any state model that represents edits as patch bundles:
 
 ```text
 {
@@ -10,10 +10,10 @@ The `@gbdrummer/tracer/history` subpath exports the generic patch-based history 
 }
 ```
 
-For writable Tracer collections, prefer the integrated root export. It supplies patch application, validation, and batching automatically:
+For writable Signalib collections, prefer the integrated root export. It supplies patch application, validation, and batching automatically:
 
 ```js
-import { createHistory, signal } from '@gbdrummer/tracer'
+import { createHistory, signal } from 'signalib'
 
 const todos = signal.array([])
 const history = createHistory({ target: todos, limit: 100 })
@@ -27,10 +27,10 @@ history.undo()
 history.redo()
 ```
 
-Use the generic subpath for custom patch formats or non-Tracer state:
+Use the generic subpath for custom patch formats or non-Signalib state:
 
 ```js
-import createHistory from '@gbdrummer/tracer/history'
+import createHistory from 'signalib/history'
 
 const state = { count: 0 }
 
@@ -99,7 +99,7 @@ Calling `clear()` empties past history, future history, and bundles currently pe
 
 Undo applies a step's inverse patches in reverse bundle order. Redo applies its forward patches in bundle order. Each step is presented to `applyPatches` as one combined list.
 
-The integrated Tracer API batches the complete operation. If state commits successfully and a collection subscriber then throws, the subscriber error remains visible to the caller and history stacks still move to reflect the committed state. If validation or patch application fails before mutation, both state and stacks remain unchanged.
+The integrated Signalib API batches the complete operation. If state commits successfully and a collection subscriber then throws, the subscriber error remains visible to the caller and history stacks still move to reflect the committed state. If validation or patch application fails before mutation, both state and stacks remain unchanged.
 
 The generic engine cannot infer whether an arbitrary `applyPatches` callback threw before or after mutating custom state. A generic integration whose notifications can throw after commit should supply a `batch` hook that defers those errors until its callback returns. Otherwise, `applyPatches` should throw only before committing state.
 

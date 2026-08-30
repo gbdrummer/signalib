@@ -94,12 +94,11 @@ function createDerivedMapSignal (compute) {
     getValue: source.getValue,
     key,
 
-    get index () { return getIndex() },
+    get keys () { return getIndex().keys },
+    get size () { return getIndex().size },
 
     has: key => source.getValue().has(key),
-    get: key => source.getValue().get(key),
-
-    get size () { return source.getValue().size }
+    get: key => source.getValue().get(key)
   }, source)
 }
 
@@ -447,12 +446,11 @@ export default function createMapSignal (initialValue) {
     mutate,
     key,
 
-    get index () { return getIndex() },
+    get keys () { return getIndex().keys },
+    get size () { return getIndex().size },
 
     has: key => mapData.has(key),
-    get: key => mapData.get(key),
-
-    get size () { return mapData.size }
+    get: key => mapData.get(key)
   }, {
     apply: applyPatchBundle,
     validate: validatePatchBundle

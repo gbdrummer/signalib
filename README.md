@@ -1,31 +1,29 @@
-# Tracer
+# Signalib
 
-Tracer is a predictable reactive-state library for JavaScript built around explicit dependencies, fine-grained reactive collections, and first-class mutation patches.
+Signalib is a JavaScript state library built on **signals** and **reactive collections** (Array, Object, Map, Set) with **explicit dependency tracking**.
 
-[![CI](https://github.com/gbdrummer/tracer/actions/workflows/ci.yml/badge.svg)](https://github.com/gbdrummer/tracer/actions/workflows/ci.yml)
+- **Explicit signal dependencies:** you decide which signals should cause a calculation to update by using a tracked read.
+- **Reactive Arrays, Objects, Maps, and Sets:** watch whole collections, structural changes, and dynamic Map entries or Set values.
+- **Patches and history:** collection mutations return forward and inverse records that can be inspected, replayed, or recorded for undo and redo.
 
-> Signals for JavaScript where dependencies are explicit and collection mutations are data.
+[![CI](https://github.com/gbdrummer/signalib/actions/workflows/ci.yml/badge.svg)](https://github.com/gbdrummer/signalib/actions/workflows/ci.yml)
 
-Tracer includes ordinary writable and derived signals, but its collection model is the main idea. Maps and Sets expose stable signals for individual entries or values, while every collection type exposes structural signals such as keys, size, or length where appropriate.
+## Why Signalib
 
-## Why Tracer
+Reactive code is easier to understand when you can answer a simple question: “What changes will make this update?”
 
-Tracer treats a state change as inspectable data, not merely a notification. A collection mutation can update reactive consumers while also producing forward and inverse patches that can drive undo/redo and debugging directly, or serve as a foundation for persistence and synchronization.
+The [TC39 Signals proposal](https://github.com/tc39/proposal-signals) and many signal libraries answer that question automatically by watching every signal read while a calculation runs. That can be convenient, but it also means a read hidden inside a helper function can quietly change what the calculation follows. The calculation may start updating for a new reason even though the calculation itself did not change.
 
-Its core design choices are:
+Signalib makes those connections deliberate. An ordinary read just gets the current value; only an explicit tracked read tells Signalib to update a calculation when that value changes. This takes a little more typing, but it prevents hidden reads from creating unexpected reactivity.
 
-- **Explicit dependency reads:** only a deliberate tracking-function call can create a reactive edge. Ordinary reads cannot produce "spooky action at a distance."
-- **Fine-grained collections:** observe a whole collection, its structure, or one stable key/value signal.
-- **Structured mutations:** mutate through focused Map, Set, array, and object APIs instead of implicit Proxy behavior.
-- **Forward and inverse patches:** inspect what changed and describe how to reverse it.
-- **History-ready state:** record patch bundles for transactions, undo, redo, and redo invalidation after new edits.
+Signalib brings the same clarity to collections. You can watch an entire Array, Object, Map, or Set, or only structural details such as length, keys, size, or Set values. Maps and Sets also expose stable signals for individual entries or values. Each edit returns a record of what changed and how to reverse it. Those records can be inspected, replayed, or passed to the included history helper for undo and redo.
 
 ## Installation
 
-Tracer is ESM-only. TypeScript declarations are included for editor support and type checking; the runtime implementation remains JavaScript.
+Signalib is ESM-only. TypeScript declarations are included for editor support and type checking; the runtime implementation remains JavaScript.
 
 ```sh
-npm install @gbdrummer/tracer
+npm install signalib
 ```
 
 ```js
@@ -35,15 +33,15 @@ import {
   createHistory,
   overridable,
   signal
-} from '@gbdrummer/tracer'
+} from 'signalib'
 ```
 
 ## Quick example
 
-This example observes one Map entry and captures the mutation as data:
+This example watches one user in a Map and keeps a record of the change:
 
 ```js
-import { signal } from '@gbdrummer/tracer'
+import { signal } from 'signalib'
 
 const users = signal.map()
 const ada = users.key('ada')
@@ -64,46 +62,52 @@ console.log(change.inversePatches)
 // [{ op: 'delete', key: 'ada' }]
 ```
 
-`users.key('ada')` is a stable signal for that entry, so it reacts when Ada changes without reacting to unrelated users. The same mutation updates relevant whole-collection and structural subscribers and returns an immutable description of the change.
+`users.key('ada')` is a signal just for Ada's entry. Code watching it is notified when Ada changes, but not when an unrelated user changes. The mutation also returns a read-only record of the edit and its reverse.
 
-## Explicit dependencies
+## Explicit dependency tracking
 
-Tracer deliberately separates an ordinary value read from a reactive dependency read:
+When one value is calculated from other signals, the library needs to know which changes should run that calculation again. A signal that causes the calculation to run again is called a dependency.
+
+In an automatically tracked system, every signal read while the calculation runs may become a dependency—even a read hidden inside another function. If that helper later starts reading a theme, locale, feature flag, or other setting, the calculation may begin updating for a new reason even though its own code did not change.
+
+When you create a derived signal, Signalib gives its calculation a small helper function, usually named `$`. Signalib then offers two clearly different kinds of reads:
+
+- **`someSignal.getValue()`** means “give me the value right now.”
+- **`$(someSignal)`** means “give me the value and update this calculation when it changes.”
+
+Here, the label follows `firstName`. It also reads the current `theme` when the calculation runs, but a theme change does not cause that calculation to run:
 
 ```js
 const firstName = signal('Ada')
-const lastName = signal('Lovelace')
+const theme = signal('light')
 
-const example = signal($ => {
-  const untracked = firstName.getValue() // read the current value
-  const tracked = $(lastName)            // read and register a dependency
-
-  return `${untracked} ${tracked}`
-})
-```
-
-The function passed to `signal()` receives a tracking function, conventionally named `$`.
-
-- **`signal.getValue()`** reads the current value.
-- **`$(signal)`** reads the value and registers the current computation as dependent on it.
-
-This distinction is a hard invariant, not a naming convention. `getValue()` never consults an ambient reactive context. A plain read cannot create a dependency just because it happened deep inside a helper called by a derived computation:
-
-```js
-const locale = signal('en')
-
-function readLocale () {
-  return locale.getValue()
+function readTheme () {
+  return theme.getValue()
 }
 
-const greeting = signal($ => {
-  return `${readLocale()}: Hello, ${$(firstName)}`
+const label = signal($ => {
+  return `${$(firstName)} (${readTheme()})`
+})
+
+label.subscribe(change => {
+  if (change.kind === 'update') console.log(change.nextValue)
+})
+
+firstName.setValue('Grace') // logs: Grace (light)
+theme.setValue('dark')      // logs nothing
+```
+
+The `theme` read cannot secretly make `label` follow `theme`, even though it happens inside a helper called by the calculation. This prevents “spooky action at a distance,” where a small change deep in a helper unexpectedly changes when distant code runs.
+
+If the label should follow both values, say so directly:
+
+```js
+const themedLabel = signal($ => {
+  return `${$(firstName)} (${$(theme)})`
 })
 ```
 
-`greeting` depends on `firstName`, but not `locale`. Moving `readLocale()` into or out of another helper cannot silently change the reactive graph. If `locale` should invalidate `greeting`, that relationship must appear explicitly as `$(locale)`.
-
-Explicit tracking is more verbose than implicit tracking. In return, it rules out unexpected reactivity caused by incidental reads: if there is no tracking-function call, there is no reactive edge.
+This requires a little more typing than automatic tracking. In return, it is impossible for an ordinary read to create an unexpected dependency: if there is no `$()` call, that signal will not trigger the calculation.
 
 ## Writable signals
 
@@ -172,7 +176,7 @@ const displayName = signal($ => {
 })
 ```
 
-`displayName` always depends on `useNickname`. It depends on either `nickname` or `name` according to the branch taken during its latest computation; Tracer updates those subscriptions when the branch changes.
+`displayName` always depends on `useNickname`. It depends on either `nickname` or `name` according to the branch taken during its latest computation; Signalib updates those subscriptions when the branch changes.
 
 Derived signals have two subscription modes:
 
@@ -250,7 +254,7 @@ Object mutators are `has`, `get`, `set`, `delete`, and `assign`.
 ### Maps
 
 ```js
-import { signal } from '@gbdrummer/tracer'
+import { signal } from 'signalib'
 
 const users = signal.map([
   ['ada', { name: 'Ada' }]
@@ -262,7 +266,7 @@ users.mutate(map => {
 
 users.has('ada') // true
 users.get('grace') // { name: 'Grace' }
-users.size // 2
+users.size.getValue() // 2
 ```
 
 Map mutators are `has`, `get`, `set`, `delete`, `clear`, `keys`, `values`, and `entries`.
@@ -278,7 +282,7 @@ selectedIds.mutate(set => {
 })
 
 selectedIds.has('b') // true
-selectedIds.size // 1
+selectedIds.size.getValue() // 1
 ```
 
 Set mutators are `has`, `add`, `delete`, `clear`, `keys`, `values`, and `entries`.
@@ -297,30 +301,30 @@ const profile = signal.object($ => ({ name: $(first) }))
 const profileMap = signal.map($ => [['name', $(first)]])
 ```
 
-Derived collections expose their readonly collection APIs and reactive indexes, but not `setValue()` or `mutate()`.
+Derived collections expose their readonly collection APIs and structural signals, but not `setValue()` or `mutate()`.
 
-## Fine-grained collection indexes
+## Fine-grained collection signals
 
-Collection indexes let consumers observe structural or entry-level state without subscribing to every collection update.
+Collection signals let consumers observe structural or entry-level state without subscribing to every collection update.
 
 | Collection | Structural signals | Stable entry signal |
 | --- | --- | --- |
-| Array | `index.length` | — |
-| Object | `index.keys`, `index.size` | — |
-| Map | `index.keys`, `index.size` | `key(key)` → `{ present, value }` |
-| Set | `index.values`, `index.size` | `value(value)` → `{ present }` |
+| Array | `length` | — |
+| Object | `keys`, `size` | — |
+| Map | `keys`, `size` | `key(key)` → `{ present, value }` |
+| Set | `values`, `size` | `value(value)` → `{ present }` |
 
 For example, a user directory can expose whole-collection changes, structural changes, one user's entry, derived state, and mutation records independently:
 
 ```js
-import { signal } from '@gbdrummer/tracer'
+import { signal } from 'signalib'
 
 const users = signal.map([
   ['ada', { name: 'Ada' }]
 ])
 
 const ada = users.key('ada')
-const userCount = signal($ => $(users.index.size))
+const userCount = signal($ => $(users.size))
 
 function logUpdates (label, source) {
   source.subscribe(change => {
@@ -336,8 +340,8 @@ users.subscribe(change => {
   console.log('inverse patches:', change.meta.inversePatches)
 })
 
-logUpdates('keys:', users.index.keys)
-logUpdates('size:', users.index.size)
+logUpdates('keys:', users.keys)
+logUpdates('size:', users.size)
 logUpdates('Ada:', ada)
 logUpdates('derived user count:', userCount)
 
@@ -373,7 +377,7 @@ Consumers can therefore subscribe at the narrowest useful granularity:
 Stored collection mutations return immutable forward and inverse patch bundles. The operations are ordinary data that describe both what changed and how to undo it:
 
 ```js
-import { signal } from '@gbdrummer/tracer'
+import { signal } from 'signalib'
 
 const users = signal.map()
 
@@ -401,7 +405,7 @@ Patch bundles, patch arrays, and patch objects are frozen. Inverse patches are r
 Use `applyPatches(target, patches)` to replay either side of a collection patch bundle without writing an application-specific opcode interpreter:
 
 ```js
-import { applyPatches, signal } from '@gbdrummer/tracer'
+import { applyPatches, signal } from 'signalib'
 
 const users = signal.map()
 
@@ -424,10 +428,10 @@ Invalid targets, malformed patches, and unsupported operations throw clear error
 
 ## History and undo/redo
 
-`createHistory({ target })` connects a writable Tracer collection directly to the patch-based history engine:
+`createHistory({ target })` connects a writable Signalib collection directly to the patch-based history engine:
 
 ```js
-import { createHistory, signal } from '@gbdrummer/tracer'
+import { createHistory, signal } from 'signalib'
 
 const todos = signal.array([])
 const history = createHistory({ target: todos, limit: 100 })
@@ -450,10 +454,10 @@ Use `history.transaction(fn)` to group several recorded mutation bundles into on
 
 Undo and redo validate their complete patch list before mutation. If collection state commits and a subscriber then throws, the error is rethrown while the history stacks still move to reflect the committed state.
 
-For custom patch formats, the lower-level generic engine is available from `@gbdrummer/tracer/history`:
+For custom patch formats, the lower-level generic engine is available from `signalib/history`:
 
 ```js
-import createHistory from '@gbdrummer/tracer/history'
+import createHistory from 'signalib/history'
 ```
 
 See the generic engine's [standalone documentation](./src/history/README.md).
@@ -515,7 +519,7 @@ createHistory({ target, limit? })
 
 ## Project status
 
-Tracer is currently alpha software. The core architecture is usable and covered by runtime and type-level tests, but public APIs may still change as the collection, patch, and history models are refined.
+Signalib is currently alpha software. The core architecture is usable and covered by runtime and type-level tests, but public APIs may still change as the collection, patch, and history models are refined.
 
 Experimentation and early adoption are welcome. The most useful feedback at this stage concerns:
 
@@ -525,4 +529,4 @@ Experimentation and early adoption are welcome. The most useful feedback at this
 - History and undo/redo behavior.
 - Performance characteristics and edge cases.
 
-Please [open an issue](https://github.com/gbdrummer/tracer/issues) with a focused example or use case.
+Please [open an issue](https://github.com/gbdrummer/signalib/issues) with a focused example or use case.

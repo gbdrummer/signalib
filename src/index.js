@@ -7,7 +7,7 @@ import createDerivedSignal from './core/createDerivedSignal.js'
 
 export { default as overridable } from './core/overridable.js'
 export { batch } from './core/queue.js'
-export { default as TracerSignal } from './core/TracerSignal.js'
+export { default as SignalibSignal } from './core/SignalibSignal.js'
 export { SIGNAL_BRAND } from './core/constants.js'
 export { isSignal } from './core/utilities.js'
 export { default as applyPatches } from './collections/applyPatches.js'

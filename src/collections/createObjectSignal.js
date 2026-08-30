@@ -29,7 +29,8 @@ function createDerivedObjectSignal (compute) {
   return composeSignal({
     getValue: source.getValue,
 
-    get index () { return getIndex() }
+    get keys () { return getIndex().keys },
+    get size () { return getIndex().size }
   }, source)
 }
 
@@ -269,7 +270,8 @@ export default function createObjectSignal (initialValue) {
     setValue,
     mutate,
 
-    get index () { return getIndex() }
+    get keys () { return getIndex().keys },
+    get size () { return getIndex().size }
   }, {
     apply: applyPatchBundle,
     validate: validatePatchBundle

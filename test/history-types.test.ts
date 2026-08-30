@@ -1,6 +1,6 @@
 import createHistory, {
   type PatchBundle
-} from '@gbdrummer/tracer/history'
+} from 'signalib/history'
 
 interface SetPatch {
   readonly op: 'set'

@@ -32,7 +32,7 @@ function createDerivedArraySignal (compute) {
   return composeSignal({
     getValue: source.getValue,
 
-    get index () { return getIndex() }
+    get length () { return getIndex().length }
   }, source)
 }
 
@@ -249,7 +249,7 @@ export default function createArraySignal (initialValue) {
     setValue,
     mutate,
 
-    get index () { return getIndex() }
+    get length () { return getIndex().length }
   }, {
     apply: applyPatchBundle,
     validate: validatePatchBundle

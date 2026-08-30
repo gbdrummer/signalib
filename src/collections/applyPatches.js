@@ -1,4 +1,4 @@
-const PATCH_APPLICATOR = Symbol('tracer.patchApplicator')
+const PATCH_APPLICATOR = Symbol('signalib.patchApplicator')
 
 export function attachPatchApplicator (target, applicator) {
   Object.defineProperty(target, PATCH_APPLICATOR, { value: applicator })
@@ -8,7 +8,7 @@ export function attachPatchApplicator (target, applicator) {
 function getPatchApplicator (target) {
   const applicator = target?.[PATCH_APPLICATOR]
   if (!applicator || typeof applicator.apply !== 'function' || typeof applicator.validate !== 'function') {
-    throw new TypeError('applyPatches(target, patches) expects target to be a writable Tracer collection signal')
+    throw new TypeError('applyPatches(target, patches) expects target to be a writable Signalib collection signal')
   }
 
   return applicator

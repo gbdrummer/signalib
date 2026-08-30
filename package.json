@@ -1,16 +1,16 @@
 {
-  "name": "@gbdrummer/tracer",
+  "name": "signalib",
   "version": "0.0.1-alpha.2",
   "description": "Predictable JavaScript signals with explicit dependencies, fine-grained reactive collections, and first-class mutation patches.",
   "license": "MIT",
   "author": "Graham Butler",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/gbdrummer/tracer.git"
+    "url": "git+https://github.com/gbdrummer/signalib.git"
   },
-  "homepage": "https://github.com/gbdrummer/tracer#readme",
+  "homepage": "https://github.com/gbdrummer/signalib#readme",
   "bugs": {
-    "url": "https://github.com/gbdrummer/tracer/issues"
+    "url": "https://github.com/gbdrummer/signalib/issues"
   },
   "keywords": [
     "signals",
@@ -54,7 +54,7 @@
   },
   "scripts": {
     "smoke": "node ./test/smoke-tests.node.js",
-    "stress": "TRACER_STRESS=1 node ./test/smoke-tests.node.js",
+    "stress": "SIGNALIB_STRESS=1 node ./test/smoke-tests.node.js",
     "test": "node ./test/smoke-tests.node.js",
     "test:types": "tsc -p ./test/tsconfig.json"
   },
