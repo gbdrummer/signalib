@@ -38,12 +38,15 @@ import {
 
 ## Quick example
 
-This example watches one user in a Map and keeps a record of the change:
+This example starts with an existing user directory, watches Ada's entry, and keeps a record when her profile changes:
 
 ```js
 import { signal } from '@gbdrummer/signalib'
 
-const users = signal.map()
+const users = signal.map([
+  ['ada', { name: 'Ada' }],
+  ['grace', { name: 'Grace' }]
+])
 const ada = users.key('ada')
 
 ada.subscribe(change => {
@@ -52,14 +55,14 @@ ada.subscribe(change => {
 })
 
 const change = users.mutate(map => {
-  map.set('ada', { name: 'Ada' })
+  map.set('ada', { name: 'Ada Lovelace' })
 })
 
 console.log(change.patches)
-// [{ op: 'set', key: 'ada', value: { name: 'Ada' } }]
+// [{ op: 'set', key: 'ada', value: { name: 'Ada Lovelace' } }]
 
 console.log(change.inversePatches)
-// [{ op: 'delete', key: 'ada' }]
+// [{ op: 'set', key: 'ada', value: { name: 'Ada' } }]
 ```
 
 `users.key('ada')` is a signal just for Ada's entry. Code watching it is notified when Ada changes, but not when an unrelated user changes. The mutation also returns a read-only record of the edit and its reverse.
